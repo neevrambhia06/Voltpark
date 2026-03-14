@@ -72,37 +72,31 @@ export const AuthProvider = ({ children }) => {
                 setUser(session?.user ?? null);
 
                 if (session?.user) {
-                    // If it's a new OAuth sign-in, create the record in public.users if it doesn't exist
+                    // FIX: Safer auto-profile creation
                     if (_event === 'SIGNED_IN') {
-                        try {
-                            const { data: existingUser } = await supabase
-                                .from('users')
-                                .select('id')
-                                .eq('id', session.user.id)
-                                .maybeSingle();
-
-                            if (!existingUser) {
-                                // Also check owner profiles to avoid giving users dual roles accidentally
-                                const { data: existingOwner } = await supabase
-                                    .from('owner_profiles')
-                                    .select('id')
-                                    .eq('id', session.user.id)
-                                    .maybeSingle();
-
-                                if (!existingOwner) {
-                                    await supabase.from('users').insert([{
-                                        id: session.user.id,
-                                        email: session.user.email,
-                                        name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
-                                        role: 'user',
-                                        approval_status: 'none',
-                                        created_at: new Date().toISOString()
-                                    }]);
+                        // Wait a tiny bit to let manual profile creation finish if this is a signup
+                        setTimeout(async () => {
+                            try {
+                                const { data: existingUser } = await supabase.from('users').select('id').eq('id', session.user.id).maybeSingle();
+                                if (!existingUser) {
+                                    const { data: existingOwner } = await supabase.from('owner_profiles').select('id').eq('id', session.user.id).maybeSingle();
+                                    // ONLY create a default 'user' profile if they aren't an owner AND didn't just sign up as an owner
+                                    // Hint: Check metadata role if available
+                                    const metaRole = session.user.user_metadata?.role;
+                                    if (!existingOwner && metaRole !== 'owner') {
+                                        console.log("VOLTPARK: Creating default user profile for new login");
+                                        await supabase.from('users').insert([{
+                                            id: session.user.id,
+                                            email: session.user.email,
+                                            name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
+                                            role: 'user',
+                                            approval_status: 'none',
+                                            created_at: new Date().toISOString()
+                                        }]);
+                                    }
                                 }
-                            }
-                        } catch (insertionError) {
-                            console.error('Error auto-creating user profile:', insertionError);
-                        }
+                            } catch (err) { console.error("Auto-profile err:", err); }
+                        }, 1000);
                     }
 
                     await fetchGetUserProfile(session.user.id);
@@ -125,9 +119,9 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     const fetchGetUserProfile = async (userId) => {
-        // Tighter internal timeout for profile fetching
+        // Tighter internal timeout for profile fetching, but relaxed to 15s for stability on slow networks
         const profileTimeout = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Profile fetch timeout")), 4000)
+            setTimeout(() => reject(new Error("Profile fetch timeout")), 15000)
         );
 
         try {
@@ -165,14 +159,22 @@ export const AuthProvider = ({ children }) => {
                 setUserRole(result.role);
                 setApprovalStatus(result.approval_status || 'none');
                 setUserEmailFromDB(result.email || "");
+                console.log("✔ Profile active:", result.role);
             } else {
                 console.warn("⚠ User profile not found in users OR owner_profiles!");
-                if (!userRole) setUserRole("user"); // Final fallback
+                // Final fallback if we are absolutely sure there is no profile
+                if (!userRole) {
+                    const metaRole = user?.user_metadata?.role;
+                    setUserRole(metaRole || "user");
+                }
             }
-
         } catch (err) {
             console.error("Fetch profile error:", err);
-            if (!userRole) setUserRole("user"); // Fallback to basic user role on error/timeout
+            // Don't overwrite if we already have a role (e.g. from a previous successful fetch)
+            if (!userRole) {
+                const metaRole = user?.user_metadata?.role;
+                setUserRole(metaRole || "user");
+            }
         } finally {
             setLoading(false);
         }

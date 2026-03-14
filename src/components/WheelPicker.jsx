@@ -32,11 +32,11 @@ const WheelPicker = ({ items, value, onChange, label, infinite = false }) => {
         const totalHeight = items.length * itemHeight;
 
         // If scrolled near top (into first set), jump to middle set
-        if (container.scrollTop < itemHeight) {
+        if (container.scrollTop < 10) {
             container.scrollTop = container.scrollTop + totalHeight;
         }
-        // If scrolled near bottom (into third set), jump to middle set
-        else if (container.scrollTop > totalHeight * 2 - itemHeight * 4) { // Buffer for visible area
+        // If scrolled deep into third set, jump back to middle set
+        else if (container.scrollTop > totalHeight * 2 + itemHeight) {
             container.scrollTop = container.scrollTop - totalHeight;
         }
     };

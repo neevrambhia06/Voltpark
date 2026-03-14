@@ -44,36 +44,46 @@ const OwnerPortal = () => {
     }, [user]);
 
     const fetchOwnerData = async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+            setLoading(false);
+        }, 6000);
+
         try {
             setLoading(true);
             const { data: locs, error: locError } = await supabase
                 .from('locations')
                 .select('*')
                 .eq('owner_id', user.id)
-                .order('created_at', { ascending: false });
+                .order('created_at', { ascending: false })
+                .abortSignal(controller.signal);
 
-            if (locError) { console.error(locError); return; }
+            if (locError) throw locError;
             setLocations(locs || []);
 
             if (locs && locs.length > 0) {
                 const locationIds = locs.map(l => l.id);
-                // Step 3: Fetch bookings where location_id IN (owner_location_ids)
                 const { data: bks, error: bkError } = await supabase
                     .from('bookings')
-                    .select('*, locations(name), users(name, email)') // Corrected select string
+                    .select('*, locations(name), users(name, email)')
                     .in('location_id', locationIds)
-                    .order('created_at', { ascending: false });
+                    .order('created_at', { ascending: false })
+                    .abortSignal(controller.signal);
 
                 if (bkError) throw bkError;
-
                 setBookings(bks || []);
             } else {
                 setBookings([]);
             }
-
         } catch (error) {
-            console.error("Error fetching owner data:", error);
+            if (error.name === 'AbortError') {
+                console.warn("VOLTPARK: Owner data fetch timed out");
+            } else {
+                console.error("Error fetching owner data:", error);
+            }
         } finally {
+            clearTimeout(timeoutId);
             setLoading(false);
         }
     };
