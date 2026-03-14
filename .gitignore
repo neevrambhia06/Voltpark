@@ -27,6 +27,8 @@ dist-ssr
 .env
 .env.*
 !.env.example
+client_secret_*.json
+oauth_*.json
 
 # Debug Scripts
 debug_slots.js
