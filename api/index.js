@@ -1,9 +1,8 @@
-
-require('dotenv').config();
-const express = require('express');
-const Razorpay = require('razorpay');
-const cors = require('cors');
-const crypto = require('crypto');
+import 'dotenv/config';
+import express from 'express';
+import Razorpay from 'razorpay';
+import cors from 'cors';
+import crypto from 'crypto';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -86,11 +85,4 @@ app.post('/api/verify-payment', (req, res) => {
     }
 });
 
-// For local development
-if (process.env.NODE_ENV !== 'production' && require.main === module) {
-    app.listen(port, () => {
-        console.log(`Server running on http://localhost:${port}`);
-    });
-}
-
-module.exports = app;
+export default app;
