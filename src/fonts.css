@@ -1,0 +1,8 @@
+/* Add this to your index.css or a new contents file */
+@font-face {
+    font-family: 'Ferron';
+    src: url('/fonts/Ferron.otf') format('opentype'),
+        url('/fonts/Ferron.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}

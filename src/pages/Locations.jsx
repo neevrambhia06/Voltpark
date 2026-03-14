@@ -1,0 +1,221 @@
+
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { Link, useSearchParams } from 'react-router-dom';
+import { MapPin, Zap, Filter, Search, Car, Bike } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { SEED_LOCATIONS } from '../lib/seedData';
+
+const Locations = ({ type }) => {
+    const [locations, setLocations] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [searchParams] = useSearchParams();
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filterType, setFilterType] = useState('all');
+
+    useEffect(() => {
+        fetchLocations();
+
+        // Realtime subscription
+        const channel = supabase
+            .channel('public-locations-list')
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'locations' },
+                (payload) => {
+                    console.log('Location updated in realtime:', payload.new.id, payload.new.available_slots);
+                    setLocations((prevLocations) =>
+                        prevLocations.map((loc) =>
+                            loc.id === payload.new.id ? { ...loc, ...payload.new } : loc
+                        )
+                    );
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [type]); // Re-fetch when type changes
+
+    // Fallback polling every 15 seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            fetchLocations();
+        }, 15000);
+        return () => clearInterval(interval);
+    }, [type]);
+
+    const fetchLocations = async () => {
+        // setLoading(true); // Don't set loading on refresh, only initial
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        try {
+            console.log("VOLTPARK: Fetching locations...");
+            let query = supabase.from('locations').select('*').order('created_at', { ascending: false });
+
+            if (type !== 'all') {
+                query = query.eq('type', type);
+            }
+
+            const { data, error } = await query.abortSignal(controller.signal);
+
+            if (error) {
+                console.error('Error fetching locations:', error);
+            } else if (data) {
+                setLocations(data);
+            }
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                console.warn('VOLTPARK: Locations fetch timed out');
+            } else {
+                console.error('VOLTPARK: Fetch error:', err);
+            }
+        } finally {
+            clearTimeout(timeoutId);
+            setLoading(false);
+        }
+    };
+
+    const insertSeedData = async (seeds) => {
+        // Seed logic...
+    };
+
+    // Filter logic
+    const filteredLocations = locations.filter((location) => {
+        const matchesSearch =
+            location.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            location.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            location.address.toLowerCase().includes(searchTerm.toLowerCase());
+
+        const matchesType =
+            type !== 'all'
+                ? true
+                : filterType === 'all'
+                    ? true
+                    : filterType === 'car'
+                        ? location.type === 'parking' && (location.car_total_slots > 0)
+                        : filterType === 'bike'
+                            ? location.type === 'parking' && (location.bike_total_slots > 0)
+                            : location.type === filterType;
+
+        return matchesSearch && matchesType;
+    });
+
+    return (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+            <h1 className="text-3xl font-bold text-slate-900 mb-8 capitalize">
+                {type === 'all' ? 'All Locations' : type === 'ev' ? 'EV Charging Stations' : 'Parking Spots'}
+            </h1>
+
+            {/* Search and Filter Section */}
+            <div className="mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
+                <div className="relative w-full md:w-96">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Search className="h-5 w-5 text-gray-400" />
+                    </div>
+                    <input
+                        type="text"
+                        placeholder="Search by location name, city, or area..."
+                        className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-full leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm transition duration-150 ease-in-out shadow-sm"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+
+                {type === 'all' && (
+                    <div className="flex flex-wrap gap-1 bg-white/70 backdrop-blur-md rounded-full p-1.5 shadow-sm border border-gray-200/50 relative overflow-hidden">
+                        {['all', 'parking', 'ev', 'car', 'bike'].map(ft => (
+                            <button
+                                key={ft}
+                                onClick={() => setFilterType(ft)}
+                                className={`relative px-5 py-2 text-xs font-extrabold uppercase tracking-wider transition-colors duration-200 rounded-full z-10 flex items-center gap-1.5 ${filterType === ft
+                                    ? 'text-white'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                            >
+                                {filterType === ft && (
+                                    <motion.div
+                                        layoutId="liquid-filter-bg"
+                                        className="absolute inset-0 bg-slate-900 rounded-full -z-10 shadow-lg"
+                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                    />
+                                )}
+                                {ft === 'car' && <Car size={14} className={filterType === ft ? 'text-blue-300' : 'text-slate-400'} />}
+                                {ft === 'bike' && <Bike size={14} className={filterType === ft ? 'text-orange-300' : 'text-slate-400'} />}
+                                {ft === 'ev' && <Zap size={14} className={filterType === ft ? 'text-teal-300' : 'text-slate-400'} />}
+                                {ft === 'all' ? 'ALL' : ft}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {loading ? (
+                <div className="text-center py-20 text-xl font-medium">Loading locations...</div>
+            ) : filteredLocations.length === 0 ? (
+                <div className="text-center py-20 bg-white rounded-lg shadow">
+                    <p className="text-xl text-gray-500">No locations found for this search.</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {filteredLocations.map((location) => (
+                        <Link key={location.id} to={`/locations/${location.id}`} className="card flex flex-col h-full group hover:no-underline p-3">
+                            <div className="h-32 bg-gray-200 rounded-md mb-2 overflow-hidden relative">
+                                <img
+                                    src={location.image_url || 'https://images.unsplash.com/photo-1590674899484-d5640e854abe?auto=format&fit=crop&q=80'}
+                                    alt={location.name}
+                                    className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
+                                />
+                                <div className="absolute top-1 right-1 bg-white px-1.5 py-0.5 rounded-full text-[10px] font-bold shadow flex items-center">
+                                    {location.type === 'ev' ? <Zap size={10} className="text-secondary mr-1" /> : <MapPin size={10} className="text-primary mr-1" />}
+                                    <span className="uppercase text-[10px]">{location.type}</span>
+                                </div>
+                            </div>
+                            <div className="flex-grow">
+                                <h3 className="text-sm font-bold text-slate-900 mb-1 group-hover:text-primary transition-colors">{location.name}</h3>
+                                <p className="text-gray-600 mb-2 text-xs flex items-start">
+                                    <MapPin size={12} className="mr-1 mt-0.5 flex-shrink-0 text-gray-400" />
+                                    {location.address}, {location.city}
+                                </p>
+                                {location.type === 'parking' ? (
+                                    <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-gray-100">
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] text-gray-400 font-bold mb-0.5 flex items-center"><Car size={10} className="mr-1" /> Car</span>
+                                            <span className="text-xs font-bold text-gray-900">₹{location.car_price_per_hour}/hr</span>
+                                            <span className={`${location.car_available_slots > 0 ? 'text-green-600' : 'text-red-500'} text-[9px] font-bold`}>
+                                                {location.car_available_slots} / {location.car_total_slots} left
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-col border-l border-gray-100 pl-2">
+                                            <span className="text-[10px] text-gray-400 font-bold mb-0.5 flex items-center"><Bike size={10} className="mr-1" /> Bike</span>
+                                            <span className="text-xs font-bold text-gray-900">₹{location.bike_price_per_hour}/hr</span>
+                                            <span className={`${location.bike_available_slots > 0 ? 'text-green-600' : 'text-red-500'} text-[9px] font-bold`}>
+                                                {location.bike_available_slots} / {location.bike_total_slots} left
+                                            </span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex justify-between items-center text-xs text-gray-700 mb-2 mt-2">
+                                        <span className="bg-blue-50 px-1.5 py-0.5 rounded text-blue-700 font-bold text-[10px]">
+                                            ₹{location.price_per_hour}/hr
+                                        </span>
+                                        <span className={`${location.available_slots > 0 ? 'text-green-600' : 'text-red-500'} font-bold text-[10px]`}>
+                                            {location.available_slots} / {location.total_slots} slots
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="w-full btn-primary text-center mt-auto py-1.5 text-xs rounded-md">
+                                View
+                            </div>
+                        </Link>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default Locations;
