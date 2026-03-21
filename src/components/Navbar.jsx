@@ -87,23 +87,10 @@ const Navbar = () => {
                                 </div>
                             </div>
                         ) : (
-                            <div className="relative group">
-                                <Link to="/login" className="btn-primary flex items-center space-x-2 px-5 py-2 rounded-full text-sm">
-                                    <User size={16} />
-                                    <span>Login</span>
-                                </Link>
-                                <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top-right z-50 border border-gray-100">
-                                    <Link to="/login" className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 font-medium">
-                                        Login as User
-                                    </Link>
-                                    <Link to="/owner-login" className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 font-medium">
-                                        Login as Owner
-                                    </Link>
-                                    <Link to="/admin-login" className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 font-medium">
-                                        Login as Admin
-                                    </Link>
-                                </div>
-                            </div>
+                            <Link to="/login" className="btn-primary flex items-center space-x-2 px-5 py-2 rounded-full text-sm">
+                                <User size={16} />
+                                <span>Login</span>
+                            </Link>
                         )}
                     </div>
 

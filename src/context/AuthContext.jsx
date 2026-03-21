@@ -1,5 +1,5 @@
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext({});
@@ -13,108 +13,99 @@ export const AuthProvider = ({ children }) => {
     const [userRole, setUserRole] = useState(null); // IMPORTANT: null instead of "user" to prevent premature routing
     const [approvalStatus, setApprovalStatus] = useState("none"); // default
     const [userEmailFromDB, setUserEmailFromDB] = useState(""); // content
+    // Track actual current role via ref to avoid stale closure in async callbacks
+    const currentRoleRef = useRef(null);
 
     useEffect(() => {
-        // FIX C: Global loading hard cap
-        if (loading) {
-            const hardTimeout = setTimeout(() => {
-                setLoading(false);
-                console.warn('VOLTPARK: Hard timeout — forced load');
-            }, 5000);
-            return () => clearTimeout(hardTimeout);
-        }
-    }, [loading]);
+        let mounted = true;
 
-    useEffect(() => {
-        const initAuth = async () => {
+        const initSession = async () => {
             try {
-                // FIX A: getSession() timeout
-                const sessionPromise = supabase.auth.getSession();
-                const timeoutPromise = new Promise((resolve) =>
-                    setTimeout(() => resolve({ data: { session: null }, error: null }), 3000)
-                );
+                // Step 1: Get existing session from localStorage
+                const { data: { session }, error } = await supabase.auth.getSession();
 
-                const { data, error } = await Promise.race([sessionPromise, timeoutPromise]);
-                if (error) throw error;
-
-                const session = data?.session;
-                setSession(session);
-                setUser(session?.user ?? null);
+                if (!mounted) return;
 
                 if (session?.user) {
+                    setSession(session);
+                    setUser(session.user);
+                    // Step 2: Fetch user role from users or owner_profiles
                     await fetchGetUserProfile(session.user.id);
                 } else {
-                    setLoading(false);
+                    setUser(null);
+                    setSession(null);
+                    setUserRole(null);
                 }
             } catch (err) {
-                console.error("Auth check failed:", err);
-                setUser(null);
-                setLoading(false);
+                console.error('Session init error:', err);
+                if (mounted) {
+                    setUser(null);
+                    setSession(null);
+                    setUserRole(null);
+                }
+            } finally {
+                if (mounted) setLoading(false);
             }
         };
 
-        initAuth();
+        initSession();
 
-        // FIX B: onAuthStateChange() safety net
-        const authTimeout = setTimeout(() => {
-            // Only force loading false if we haven't found a user/session yet
-            // If we have a session but role is pending, let Fix C or fetchUserProfile handle it
-            if (!user && !session) {
-                setLoading(false);
-                console.warn('VOLTPARK: Safety timeout — no session found');
-            }
-        }, 3000);
+        // Step 3: Listen for auth changes AFTER init
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+            async (event, session) => {
+                if (!mounted) return;
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            clearTimeout(authTimeout); // cancel if auth responds
-            try {
-                setSession(session);
-                setUser(session?.user ?? null);
-
-                if (session?.user) {
-                    // FIX: Safer auto-profile creation
-                    if (_event === 'SIGNED_IN') {
-                        // Wait a tiny bit to let manual profile creation finish if this is a signup
-                        setTimeout(async () => {
-                            try {
-                                const { data: existingUser } = await supabase.from('users').select('id').eq('id', session.user.id).maybeSingle();
-                                if (!existingUser) {
-                                    const { data: existingOwner } = await supabase.from('owner_profiles').select('id').eq('id', session.user.id).maybeSingle();
-                                    // ONLY create a default 'user' profile if they aren't an owner AND didn't just sign up as an owner
-                                    // Hint: Check metadata role if available
-                                    const metaRole = session.user.user_metadata?.role;
-                                    if (!existingOwner && metaRole !== 'owner') {
-                                        console.log("VOLTPARK: Creating default user profile for new login");
-                                        await supabase.from('users').insert([{
-                                            id: session.user.id,
-                                            email: session.user.email,
-                                            name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
-                                            role: 'user',
-                                            approval_status: 'none',
-                                            created_at: new Date().toISOString()
-                                        }]);
-                                    }
-                                }
-                            } catch (err) { console.error("Auto-profile err:", err); }
-                        }, 1000);
-                    }
-
-                    await fetchGetUserProfile(session.user.id);
-                } else {
+                if (event === 'SIGNED_OUT') {
+                    setUser(null);
+                    setSession(null);
                     setUserRole(null);
+                    currentRoleRef.current = null;
                     setApprovalStatus("none");
                     setUserEmailFromDB("");
+                    setLoading(false);
+                    return;
                 }
-            } catch (authContentError) {
-                console.error("Critical AuthStateChange Error:", authContentError);
-            } finally {
-                setLoading(false);
+
+                if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+                    if (session?.user) {
+                        setSession(session);
+                        setUser(session.user);
+
+                        // If SIGNED_IN, handle auto-profile creation logic
+                        if (event === 'SIGNED_IN') {
+                            // Brief delay to allow manual profile creation to settle during signups
+                            setTimeout(async () => {
+                                try {
+                                    const { data: existingUser } = await supabase.from('users').select('id').eq('id', session.user.id).maybeSingle();
+                                    if (!existingUser) {
+                                        const { data: existingOwner } = await supabase.from('owner_profiles').select('id').eq('id', session.user.id).maybeSingle();
+                                        const metaRole = session.user.user_metadata?.role;
+                                        if (!existingOwner && metaRole !== 'owner') {
+                                            console.log("VOLTPARK: Creating default user profile for new login");
+                                            await supabase.from('users').insert([{
+                                                id: session.user.id,
+                                                email: session.user.email,
+                                                name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
+                                                role: 'user',
+                                                approval_status: 'none',
+                                                created_at: new Date().toISOString()
+                                            }]);
+                                        }
+                                    }
+                                } catch (err) { console.error("Auto-profile err:", err); }
+                            }, 1000);
+                        }
+
+                        await fetchGetUserProfile(session.user.id);
+                    }
+                    setLoading(false);
+                }
             }
-        });
+        );
 
         return () => {
+            mounted = false;
             subscription.unsubscribe();
-            clearTimeout(authTimeout);
         };
     }, []);
 
@@ -156,25 +147,31 @@ export const AuthProvider = ({ children }) => {
             const result = await Promise.race([fetchPromise, profileTimeout]);
 
             if (result) {
+                currentRoleRef.current = result.role;
                 setUserRole(result.role);
                 setApprovalStatus(result.approval_status || 'none');
                 setUserEmailFromDB(result.email || "");
                 console.log("✔ Profile active:", result.role);
             } else {
                 console.warn("⚠ User profile not found in users OR owner_profiles!");
-                // Final fallback if we are absolutely sure there is no profile
-                if (!userRole) {
+                // Only set fallback if we have never successfully fetched a role
+                if (!currentRoleRef.current) {
                     const metaRole = user?.user_metadata?.role;
-                    setUserRole(metaRole || "user");
+                    const fallback = metaRole || "user";
+                    currentRoleRef.current = fallback;
+                    setUserRole(fallback);
                 }
             }
         } catch (err) {
             console.error("Fetch profile error:", err);
-            // Don't overwrite if we already have a role (e.g. from a previous successful fetch)
-            if (!userRole) {
+            // CRITICAL: Only set fallback if we have NO previous good role (ref-safe, not stale state)
+            if (!currentRoleRef.current) {
                 const metaRole = user?.user_metadata?.role;
-                setUserRole(metaRole || "user");
+                const fallback = metaRole || "user";
+                currentRoleRef.current = fallback;
+                setUserRole(fallback);
             }
+            // else: silently preserve the existing valid role (e.g. 'owner')
         } finally {
             setLoading(false);
         }

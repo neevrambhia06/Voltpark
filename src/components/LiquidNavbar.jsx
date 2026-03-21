@@ -102,22 +102,9 @@ const LiquidNavbar = () => {
                                 </div>
                             </div>
                         ) : (
-                            <div className="relative group">
-                                <Link to="/login" className="px-5 py-2.5 rounded-full bg-gray-900 text-white text-sm font-bold hover:bg-gray-800 transition-all shadow-lg shadow-gray-200 flex items-center gap-2">
-                                    Login
-                                </Link>
-                                <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top-right z-50 border border-gray-100">
-                                    <Link to="/login" className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 font-medium rounded-t-xl">
-                                        Login as User
-                                    </Link>
-                                    <Link to="/owner-login" className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 font-medium">
-                                        Login as Owner
-                                    </Link>
-                                    <Link to="/admin-login" className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 font-medium rounded-b-xl">
-                                        Login as Admin
-                                    </Link>
-                                </div>
-                            </div>
+                            <Link to="/login" className="px-5 py-2.5 rounded-full bg-gray-900 text-white text-sm font-bold hover:bg-gray-800 transition-all shadow-lg shadow-gray-200 flex items-center gap-2">
+                                Login
+                            </Link>
                         )}
                     </div>
 

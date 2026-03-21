@@ -1,10 +1,11 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabaseClient';
 import { Plus, Edit, Trash2, MapPin, Calendar, DollarSign, BarChart3, Clock, CheckCircle, X, Shield, Filter, Search, ChevronDown, ChevronUp, LogOut, QrCode, Car, Bike, PlusCircle, Building2 } from 'lucide-react';
 import { format } from 'date-fns';
 import BarcodeModal from '../../components/BarcodeModal';
+import { uploadLocationImage } from '../../utils/uploadImage';
 
 const OwnerPortal = () => {
     const { user, approvalStatus } = useAuth(); // Get approval status
@@ -26,13 +27,21 @@ const OwnerPortal = () => {
         type: 'parking',
         price: '', // Used for ev or legacy
         slots: '', // Used for ev or legacy
-        car_slots: '',
         car_price: '',
         bike_slots: '',
-        bike_price: ''
+        bike_price: '',
+        charging_type: null,
+        charging_speed_kw: ''
     });
 
     const [editingLoc, setEditingLoc] = useState(null);
+
+    // Image Upload State
+    const [imageFile, setImageFile] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
+    const [imageUploading, setImageUploading] = useState(false);
+    const [imageError, setImageError] = useState(null);
+    const [existingImageUrl, setExistingImageUrl] = useState(null);
 
     const isApproved = approvalStatus === 'approved';
     const authLoading = false; // Assuming handled by useAuth or parent
@@ -139,6 +148,32 @@ const OwnerPortal = () => {
         };
     }, [user]);
 
+    const handleImageChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const allowedTypes = [
+            'image/jpeg', 'image/jpg',
+            'image/png', 'image/webp'
+        ];
+
+        if (!allowedTypes.includes(file.type)) {
+            setImageError(
+                'Invalid file type. Please upload JPG, PNG or WebP.'
+            );
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+            setImageError('File too large. Maximum size is 5MB.');
+            return;
+        }
+
+        setImageError(null);
+        setImageFile(file);
+        setImagePreview(URL.createObjectURL(file));
+    };
+
     const handleAddLocation = async (e) => {
         e.preventDefault();
 
@@ -148,6 +183,25 @@ const OwnerPortal = () => {
         }
 
         try {
+            let imageUrl = null;
+
+            if (imageFile) {
+                setImageUploading(true);
+                try {
+                    // Use a temporary ID for new properties
+                    const tempId = crypto.randomUUID();
+                    imageUrl = await uploadLocationImage(
+                        imageFile,
+                        tempId
+                    );
+                } catch (err) {
+                    setImageError(err.message);
+                    setImageUploading(false);
+                    return;
+                }
+                setImageUploading(false);
+            }
+
             const { error } = await supabase.from('locations').insert([{
                 owner_id: user.id,
                 name: newLoc.name,
@@ -165,7 +219,10 @@ const OwnerPortal = () => {
 
                 bike_total_slots: parseInt(newLoc.bike_slots || 0),
                 bike_available_slots: parseInt(newLoc.bike_slots || 0),
-                bike_price_per_hour: parseFloat(newLoc.bike_price || 0)
+                bike_price_per_hour: parseFloat(newLoc.bike_price || 0),
+                charging_type: newLoc.charging_type,
+                charging_speed_kw: newLoc.charging_speed_kw ? parseFloat(newLoc.charging_speed_kw) : null,
+                image_url: imageUrl
             }]);
 
             if (error) throw error;
@@ -176,6 +233,9 @@ const OwnerPortal = () => {
                 name: '', address: '', city: '', type: 'parking', price: '', slots: '',
                 car_slots: '', car_price: '', bike_slots: '', bike_price: ''
             });
+            setImageFile(null);
+            setImagePreview(null);
+            setImageError(null);
             fetchOwnerData(); // Refresh list
 
         } catch (error) {
@@ -188,6 +248,34 @@ const OwnerPortal = () => {
         if (!editingLoc) return;
 
         try {
+            let finalImageUrl = editingLoc.image_url;
+
+            // Handle image changes
+            if (imageFile) {
+                setImageUploading(true);
+                try {
+                    // Delete old image if it exists
+                    if (existingImageUrl) {
+                        await deleteLocationImage(existingImageUrl);
+                    }
+
+                    // Upload new image
+                    finalImageUrl = await uploadLocationImage(
+                        imageFile,
+                        editingLoc.id
+                    );
+                } catch (err) {
+                    setImageError(err.message);
+                    setImageUploading(false);
+                    return;
+                }
+                setImageUploading(false);
+            } else if (!imagePreview && existingImageUrl) {
+                // Image was removed
+                await deleteLocationImage(existingImageUrl);
+                finalImageUrl = null;
+            }
+
             const updates = {
                 name: editingLoc.name,
                 address: editingLoc.address,
@@ -195,6 +283,9 @@ const OwnerPortal = () => {
                 type: editingLoc.type,
                 price_per_hour: parseFloat(editingLoc.price_per_hour || 0),
                 total_slots: parseInt(editingLoc.total_slots || 0),
+                charging_type: editingLoc.charging_type,
+                charging_speed_kw: editingLoc.charging_speed_kw ? parseFloat(editingLoc.charging_speed_kw) : null,
+                image_url: finalImageUrl
             };
 
             if (editingLoc.type === 'parking') {
@@ -245,6 +336,9 @@ const OwnerPortal = () => {
             alert('Property updated successfully!');
             setIsEditModalOpen(false);
             setEditingLoc(null);
+            setImageFile(null);
+            setImagePreview(null);
+            setExistingImageUrl(null);
             fetchOwnerData();
 
         } catch (error) {
@@ -254,6 +348,10 @@ const OwnerPortal = () => {
 
     const openEditModal = (loc) => {
         setEditingLoc(loc);
+        setImagePreview(loc.image_url || null);
+        setExistingImageUrl(loc.image_url || null);
+        setImageFile(null);
+        setImageError(null);
         setIsEditModalOpen(true);
     };
 
@@ -449,7 +547,7 @@ const OwnerPortal = () => {
                                         </span>
                                     </div>
                                     <p className="text-xs text-gray-500 mb-3 flex items-center">
-                                        <MapPin size={12} className="mr-1 text-gray-400" /> {loc.address}, {loc.city}
+                                        <MapPin size={12} className="mr-1" /> {loc.address}, {loc.city}
                                     </p>
                                     <div className="flex justify-between items-center text-sm font-medium border-t border-gray-100 pt-3 mt-auto">
                                         {loc.type === 'parking' ? (
@@ -574,16 +672,29 @@ const OwnerPortal = () => {
                                                                     value={booking.status || 'Scheduled'}
                                                                     onChange={(e) => handleStatusChange(booking.id, e.target.value, booking.location_id)}
                                                                     disabled={booking.status === 'Cancelled'}
-                                                                    className={`p-1 pr-6 rounded-md font-bold border cursor-pointer outline-none focus:ring-2 focus:ring-opacity-50 transition-all text-[10px] ${booking.status === 'Completed' ? 'border-green-200 bg-green-50 text-green-800' :
-                                                                        booking.status === 'Cancelled' ? 'border-red-200 bg-red-50 text-red-800' :
-                                                                            booking.status === 'Started' ? 'border-blue-200 bg-blue-50 text-blue-800' :
-                                                                                'border-gray-200 bg-white text-gray-700'
-                                                                        }`}
+                                                                    style={{
+                                                                        background: '#0f172a',
+                                                                        color: '#f8fafc',
+                                                                        border: '1px solid #334155',
+                                                                        borderRadius: '8px',
+                                                                        padding: '6px 32px 6px 12px',
+                                                                        fontSize: '13px',
+                                                                        fontWeight: 600,
+                                                                        fontFamily: 'inherit',
+                                                                        letterSpacing: '0.03em',
+                                                                        cursor: 'pointer',
+                                                                        appearance: 'none',
+                                                                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                                                                        backgroundRepeat: 'no-repeat',
+                                                                        backgroundPosition: 'right 10px center',
+                                                                        outline: 'none',
+                                                                        minWidth: '140px',
+                                                                    }}
                                                                 >
-                                                                    <option value="Scheduled">Scheduled</option>
-                                                                    <option value="Started">Started</option>
-                                                                    <option value="Completed">Completed</option>
-                                                                    {booking.status === 'Cancelled' && <option value="Cancelled">Cancelled</option>}
+                                                                    <option value="Scheduled" style={{ background: '#0f172a', color: '#94a3b8' }}>Scheduled</option>
+                                                                    <option value="Started"   style={{ background: '#0f172a', color: '#38bdf8' }}>Started</option>
+                                                                    <option value="Cancelled" style={{ background: '#0f172a', color: '#f87171' }}>Cancelled</option>
+                                                                    <option value="Completed" style={{ background: '#0f172a', color: '#4ade80' }}>Completed</option>
                                                                 </select>
                                                                 {booking.status !== 'Cancelled' && booking.status !== 'Completed' && (
                                                                     <button
@@ -612,19 +723,21 @@ const OwnerPortal = () => {
                                                                 onClick={async () => {
                                                                     if (confirm('Are you VERY sure you want to completely DELETE this booking record? This action cannot be undone.')) {
                                                                         try {
-                                                                            // If active, free up slot first
-                                                                            if (booking.status === 'Scheduled' || booking.status === 'Started') {
-                                                                                await handleStatusChange(booking.id, 'Cancelled', booking.location_id);
-                                                                            }
+                                                                            const { data, error } = await supabase
+                                                                                .rpc('delete_booking_by_owner', {
+                                                                                    p_booking_id: booking.id,
+                                                                                    p_owner_id: user.id
+                                                                                });
 
-                                                                            // Delete payments first (foreign key constraint)
-                                                                            await supabase.from('payments').delete().eq('booking_id', booking.id);
-
-                                                                            // Delete booking
-                                                                            const { error } = await supabase.from('bookings').delete().eq('id', booking.id);
                                                                             if (error) throw error;
 
-                                                                            fetchOwnerData();
+                                                                            if (!data.success) {
+                                                                                alert(data.error || 'Failed to delete booking.');
+                                                                                return;
+                                                                            }
+
+                                                                            // Remove from local state instantly
+                                                                            setBookings(prev => prev.filter(b => b.id !== booking.id));
                                                                             alert('Booking deleted successfully.');
                                                                         } catch (err) {
                                                                             console.error("Error deleting booking:", err);
@@ -657,6 +770,65 @@ const OwnerPortal = () => {
                                 </button>
                                 <h2 className="text-4xl font-extrabold mb-10 text-gray-900">Add New Property</h2>
                                 <form onSubmit={handleAddLocation} className="space-y-8">
+                                    {/* Image Upload Section - Moved to Top */}
+                                    <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 mb-6">
+                                        <label className="block text-gray-700 font-bold mb-3 flex items-center gap-2">
+                                            <PlusCircle size={18} className="text-primary" /> Property Image
+                                        </label>
+
+                                        <div
+                                            onClick={() => document.getElementById('location-image-input').click()}
+                                            className={`relative h-40 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-white/80 ${imagePreview ? 'border-primary bg-primary/5' : 'border-gray-300 bg-white'}`}
+                                        >
+                                            {imagePreview ? (
+                                                <>
+                                                    <img
+                                                        src={imagePreview}
+                                                        alt="Location preview"
+                                                        className="absolute inset-0 w-full h-full object-cover rounded-xl opacity-20"
+                                                    />
+                                                    <div className="relative z-10 flex flex-col items-center">
+                                                        <Plus size={32} className="text-primary mb-2" />
+                                                        <span className="text-sm font-bold text-primary">Change Image</span>
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Plus className="text-gray-400 mb-2" size={32} />
+                                                    <span className="text-sm font-bold text-gray-500">Add Property Image</span>
+                                                    <span className="text-[10px] text-gray-400 mt-1 uppercase tracking-wider">JPG, PNG, WEBP (Max 5MB)</span>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        <input
+                                            id="location-image-input"
+                                            type="file"
+                                            accept="image/jpeg,image/jpg,image/png,image/webp"
+                                            onChange={handleImageChange}
+                                            className="hidden"
+                                        />
+
+                                        <div className="flex justify-between items-center mt-3">
+                                            {imagePreview && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setImageFile(null);
+                                                        setImagePreview(null);
+                                                        setImageError(null);
+                                                    }}
+                                                    className="text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1"
+                                                >
+                                                    <Trash2 size={12} /> Remove
+                                                </button>
+                                            )}
+                                            {imageError && (
+                                                <p className="text-xs font-bold text-red-500 ml-auto">{imageError}</p>
+                                            )}
+                                        </div>
+                                    </div>
+
                                     <div className="grid grid-cols-2 gap-8">
                                         <div>
                                             <label className="block text-gray-700 font-bold mb-2">Property Name</label>
@@ -726,23 +898,63 @@ const OwnerPortal = () => {
                                             </div>
                                         </>
                                     ) : (
-                                        <div className="grid grid-cols-2 gap-6">
-                                            <div>
-                                                <label className="block text-gray-700 font-bold mb-2">Price/Hr (₹)</label>
-                                                <input type="number" required
-                                                    className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                                    value={newLoc.price} onChange={e => setNewLoc({ ...newLoc, price: e.target.value })} placeholder="0.00" />
+                                        <div className="space-y-6">
+                                            <div className="grid grid-cols-2 gap-6">
+                                                <div>
+                                                    <label className="block text-gray-700 font-bold mb-2">Price/Hr (₹)</label>
+                                                    <input type="number" required
+                                                        className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                                                        value={newLoc.price} onChange={e => setNewLoc({ ...newLoc, price: e.target.value })} placeholder="0.00" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-gray-700 font-bold mb-2">Total Slots</label>
+                                                    <input type="number" required
+                                                        className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                                                        value={newLoc.slots} onChange={e => setNewLoc({ ...newLoc, slots: e.target.value })} placeholder="10" />
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className="block text-gray-700 font-bold mb-2">Total Slots</label>
-                                                <input type="number" required
-                                                    className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                                    value={newLoc.slots} onChange={e => setNewLoc({ ...newLoc, slots: e.target.value })} placeholder="10" />
-                                            </div>
+
+                                            {newLoc.type === 'ev' && (
+                                                <div>
+                                                    <label style={{ fontSize: '13px', fontWeight: 600, color: 'inherit', display: 'block', marginBottom: '6px' }}>Charging Type</label>
+                                                    <div style={{ display: 'flex', gap: '12px' }}>
+                                                        <button type="button" onClick={() => setNewLoc({ ...newLoc, charging_type: 'fast' })}
+                                                            style={{
+                                                                flex: 1, padding: '12px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                                                                border: `2px solid ${newLoc.charging_type === 'fast' ? '#f97316' : '#334155'}`,
+                                                                background: newLoc.charging_type === 'fast' ? '#fff7ed' : 'transparent',
+                                                                color: newLoc.charging_type === 'fast' ? '#f97316' : 'inherit',
+                                                            }}>
+                                                            Fast Charging
+                                                            <span style={{ display: 'block', fontSize: '11px', fontWeight: 400, marginTop: '2px', color: '#6b7280' }}>50kW and above</span>
+                                                        </button>
+                                                        <button type="button" onClick={() => setNewLoc({ ...newLoc, charging_type: 'slow' })}
+                                                            style={{
+                                                                flex: 1, padding: '12px', borderRadius: '8_pixels', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                                                                border: `2px solid ${newLoc.charging_type === 'slow' ? '#00C9C8' : '#334155'}`,
+                                                                background: newLoc.charging_type === 'slow' ? '#ecfeff' : 'transparent',
+                                                                color: newLoc.charging_type === 'slow' ? '#00C9C8' : 'inherit',
+                                                            }}>
+                                                            Slow Charging
+                                                            <span style={{ display: 'block', fontSize: '11px', fontWeight: 400, marginTop: '2px', color: '#6b7280' }}>Below 50kW</span>
+                                                        </button>
+                                                    </div>
+                                                    <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', margin: '12px 0 6px' }}>Charging Speed (kW)</label>
+                                                    <input type="number" placeholder="e.g. 22" value={newLoc.charging_speed_kw}
+                                                        onChange={e => setNewLoc({ ...newLoc, charging_speed_kw: e.target.value })}
+                                                        style={{ width: '100%', padding: '10px 12px', border: '1px solid #334155', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'transparent' }} />
+                                                </div>
+                                            )}
                                         </div>
                                     )}
-                                    <button type="submit" className="w-full btn-secondary py-5 text-2xl mt-6">
-                                        Publish Location
+
+
+                                    <button
+                                        type="submit"
+                                        disabled={imageUploading || loading}
+                                        className="w-full btn-secondary py-5 text-2xl mt-6 disabled:opacity-50"
+                                    >
+                                        {imageUploading ? 'Uploading image...' : loading ? 'Registering...' : 'Publish Location'}
                                     </button>
                                 </form>
                             </div>
@@ -751,93 +963,121 @@ const OwnerPortal = () => {
 
                     {/* Edit Location Modal */}
                     {isEditModalOpen && editingLoc && (
-                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-                            <div className="bg-white/90 backdrop-blur-2xl border border-white/20 rounded-[2.5rem] shadow-2xl max-w-2xl w-full p-12 relative animate-in fade-in zoom-in duration-300">
-                                <button onClick={() => setIsEditModalOpen(false)} className="absolute top-8 right-8 text-gray-400 hover:text-gray-900 transition-colors">
-                                    <X size={36} />
-                                </button>
-                                <h2 className="text-4xl font-extrabold mb-10 text-gray-900">Edit Property</h2>
-                                <form onSubmit={handleEditLocation} className="space-y-8">
-                                    <div className="grid grid-cols-2 gap-8">
+                        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+                            <div style={{ maxWidth: 600, width: '100%', maxHeight: '90vh', borderRadius: 16, background: 'rgba(255,255,255,0.95)', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }} className="shadow-2xl">
+                                <form onSubmit={handleEditLocation} className="flex flex-col" style={{ minHeight: 0 }}>
+
+                                    {/* Sticky header */}
+                                    <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#ffffff', borderBottom: '1px solid #f1f5f9', padding: '20px 24px 16px' }} className="flex items-start justify-between">
                                         <div>
-                                            <label>Property Name</label>
-                                            <input type="text" required
-                                                className="w-full p-4 border border-gray-300 rounded-xl text-lg"
-                                                value={editingLoc.name} onChange={e => setEditingLoc({ ...editingLoc, name: e.target.value })} />
+                                            <h2 className="text-2xl font-extrabold text-gray-900">Edit Property</h2>
+                                            <p className="text-sm text-gray-500 mt-1">Update your property details</p>
                                         </div>
-                                        <div>
-                                            <label>Type</label>
-                                            <select
-                                                className="w-full p-4 border border-gray-300 rounded-xl text-lg"
-                                                value={editingLoc.type} onChange={e => setEditingLoc({ ...editingLoc, type: e.target.value })}>
-                                                <option value="parking">Parking</option>
-                                                <option value="ev">EV Charging</option>
-                                            </select>
-                                        </div>
+                                        <button type="button" onClick={() => setIsEditModalOpen(false)} aria-label="Close" className="rounded-full hover:bg-gray-100 p-2">
+                                            <X size={20} />
+                                        </button>
                                     </div>
-                                    <div>
-                                        <label>Address</label>
-                                        <input type="text" required
-                                            className="w-full p-4 border border-gray-300 rounded-xl text-lg"
-                                            value={editingLoc.address} onChange={e => setEditingLoc({ ...editingLoc, address: e.target.value })} />
-                                    </div>
-                                    {editingLoc.type === 'parking' ? (
-                                        <>
-                                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                                                <h3 className="font-bold text-gray-900 mb-3 text-sm flex items-center gap-2">🚗 Car Settings</h3>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="block text-gray-600 font-bold mb-1 text-xs">Total Slots</label>
-                                                        <input type="number" required
-                                                            className="w-full p-3 border border-gray-300 rounded-lg text-sm"
-                                                            value={editingLoc.car_total_slots} onChange={e => setEditingLoc({ ...editingLoc, car_total_slots: e.target.value })} />
+
+                                    {/* Scrollable body */}
+                                    <div style={{ padding: 24, overflowY: 'auto', gap: 20 }} className="flex-1">
+                                        {/* Property Image Section - Moved to Top */}
+                                        <div className="mb-6 bg-blue-50/30 p-4 rounded-xl border border-blue-100">
+                                            <label className="block mb-3 text-[13px] font-semibold" style={{ color: '#374151' }}>
+                                                <span className="inline-flex items-center gap-2"><PlusCircle size={16} className="text-blue-500" /> Property Image</span>
+                                            </label>
+                                            <div onClick={() => document.getElementById('edit-location-image-input').click()} style={{ border: '2px dashed #3b82f6', borderRadius: 12, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', cursor: 'pointer', background: imagePreview ? 'white' : 'transparent' }}>
+                                                {imagePreview ? (
+                                                    <>
+                                                        <img src={imagePreview} alt="Location preview" style={{ height: 160, width: '100%', objectFit: 'cover', borderRadius: 12 }} />
+                                                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: 'rgba(0,0,0,0.2)', borderRadius: 12 }}>
+                                                            <div className="bg-white text-blue-600 rounded-lg px-3 py-1 text-xs font-bold shadow-lg">Click to change</div>
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                                                        <Plus size={24} className="text-blue-500" />
+                                                        <div className="text-sm font-bold text-blue-600">Add Property Image</div>
+                                                        <div className="text-[10px] text-blue-400 uppercase tracking-tighter">JPG, PNG, WEBP (Max 5MB)</div>
                                                     </div>
-                                                    <div>
-                                                        <label className="block text-gray-600 font-bold mb-1 text-xs">Price/Hr (₹)</label>
-                                                        <input type="number" required
-                                                            className="w-full p-3 border border-gray-300 rounded-lg text-sm"
-                                                            value={editingLoc.car_price_per_hour} onChange={e => setEditingLoc({ ...editingLoc, car_price_per_hour: e.target.value })} />
-                                                    </div>
-                                                </div>
+                                                )}
                                             </div>
 
-                                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                                                <h3 className="font-bold text-gray-900 mb-3 text-sm flex items-center gap-2">🏍️ Bike Settings</h3>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="block text-gray-600 font-bold mb-1 text-xs">Total Slots</label>
-                                                        <input type="number" required
-                                                            className="w-full p-3 border border-gray-300 rounded-lg text-sm"
-                                                            value={editingLoc.bike_total_slots} onChange={e => setEditingLoc({ ...editingLoc, bike_total_slots: e.target.value })} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-gray-600 font-bold mb-1 text-xs">Price/Hr (₹)</label>
-                                                        <input type="number" required
-                                                            className="w-full p-3 border border-gray-300 rounded-lg text-sm"
-                                                            value={editingLoc.bike_price_per_hour} onChange={e => setEditingLoc({ ...editingLoc, bike_price_per_hour: e.target.value })} />
-                                                    </div>
+                                            <input id="edit-location-image-input" type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={handleImageChange} className="hidden" />
+
+                                            {imagePreview && (
+                                                <div className="mt-3 flex items-center justify-between">
+                                                    <button type="button" onClick={() => { setImageFile(null); setImagePreview(null); setImageError(null); }} className="text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1">
+                                                        <Trash2 size={12} /> Remove
+                                                    </button>
+                                                    {imageError && <p className="text-[10px] font-bold text-red-500">{imageError}</p>}
                                                 </div>
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="grid grid-cols-2 gap-8">
+                                            )}
+                                            {imageError && !imagePreview && <p className="text-[10px] font-bold text-red-500 mt-2">{imageError}</p>}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-5">
                                             <div>
-                                                <label>Price/Hr (₹)</label>
-                                                <input type="number" required
-                                                    className="w-full p-4 border border-gray-300 rounded-xl text-lg"
-                                                    value={editingLoc.price_per_hour} onChange={e => setEditingLoc({ ...editingLoc, price_per_hour: e.target.value })} />
+                                                <label className="block mb-2 text-[13px] font-semibold" style={{ color: '#374151' }}>Property Name</label>
+                                                <input type="text" required value={editingLoc.name} onChange={e => setEditingLoc({ ...editingLoc, name: e.target.value })} className="w-full outline-none transition" style={{ padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }} />
                                             </div>
                                             <div>
-                                                <label>Total Slots</label>
-                                                <input type="number" required
-                                                    className="w-full p-4 border border-gray-300 rounded-xl text-lg"
-                                                    value={editingLoc.total_slots} onChange={e => setEditingLoc({ ...editingLoc, total_slots: e.target.value })} />
+                                                <label className="block mb-2 text-[13px] font-semibold" style={{ color: '#374151' }}>Type</label>
+                                                <select value={editingLoc.type} onChange={e => setEditingLoc({ ...editingLoc, type: e.target.value })} className="w-full outline-none transition" style={{ padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }}>
+                                                    <option value="parking">Parking</option>
+                                                    <option value="ev">EV Charging</option>
+                                                </select>
                                             </div>
                                         </div>
-                                    )}
-                                    <button type="submit" className="w-full btn-primary py-5 text-2xl mt-6">
-                                        Save Changes
-                                    </button>
+
+                                        <div>
+                                            <label className="block mb-2 text-[13px] font-semibold" style={{ color: '#374151' }}>Address</label>
+                                            <input type="text" required value={editingLoc.address} onChange={e => setEditingLoc({ ...editingLoc, address: e.target.value })} className="w-full outline-none transition" style={{ padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }} />
+                                            </div>
+
+                                        {/* Pricing / Slots */}
+                                        <div className="grid grid-cols-2 gap-5">
+                                            <div>
+                                                <label className="block mb-2 text-[13px] font-semibold" style={{ color: '#374151' }}>Price/Hr (₹)</label>
+                                                <input type="number" required value={editingLoc.price_per_hour} onChange={e => setEditingLoc({ ...editingLoc, price_per_hour: e.target.value })} className="w-full outline-none transition" style={{ padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }} />
+                                            </div>
+                                            <div>
+                                                <label className="block mb-2 text-[13px] font-semibold" style={{ color: '#374151' }}>Total Slots</label>
+                                                <input type="number" required value={editingLoc.total_slots} onChange={e => setEditingLoc({ ...editingLoc, total_slots: e.target.value })} className="w-full outline-none transition" style={{ padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }} />
+                                            </div>
+                                        </div>
+
+                                        {/* Charging Details (EV) */}
+                                        {editingLoc.type === 'ev' && (
+                                            <div style={{ border: '1.5px solid #e2e8f0', borderRadius: 12, padding: 20, background: '#f8fafc' }} className="mt-4">
+                                                <div className="mb-4" style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#374151' }}>Charging Details</div>
+                                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                                    <button type="button" onClick={() => setEditingLoc({ ...editingLoc, charging_type: 'fast' })} className={`p-4 rounded-xl border-2 transition-all text-left ${editingLoc.charging_type === 'fast' ? 'border-[#00C9C8] bg-[#f0fdfa]' : 'border-[#e2e8f0] bg-white'}`}>
+                                                        <div className="font-bold text-sm mb-1">Fast Charging</div>
+                                                        <div className="text-[10px] text-gray-500 uppercase">50kW and above</div>
+                                                    </button>
+                                                    <button type="button" onClick={() => setEditingLoc({ ...editingLoc, charging_type: 'slow' })} className={`p-4 rounded-xl border-2 transition-all text-left ${editingLoc.charging_type === 'slow' ? 'border-[#00C9C8] bg-[#f0fdfa]' : 'border-[#e2e8f0] bg-white'}`}>
+                                                        <div className="font-bold text-sm mb-1">Slow Charging</div>
+                                                        <div className="text-[10px] text-gray-500 uppercase">Below 50kW</div>
+                                                    </button>
+                                                </div>
+
+                                                <div>
+                                                    <label className="block mb-2 text-[13px] font-semibold" style={{ color: '#374151' }}>Charging Speed (kW)</label>
+                                                    <input type="number" placeholder="e.g. 22" value={editingLoc.charging_speed_kw} onChange={e => setEditingLoc({ ...editingLoc, charging_speed_kw: e.target.value })} className="w-full outline-none transition" style={{ padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }} />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                    </div>
+
+                                    {/* Sticky footer with actions */}
+                                    <div style={{ position: 'sticky', bottom: 0, zIndex: 10, background: '#ffffff', borderTop: '1px solid #f1f5f9', padding: '16px 24px' }} className="flex justify-end items-center gap-3">
+                                        <button type="button" onClick={() => setIsEditModalOpen(false)} className="text-sm font-semibold" style={{ border: '1px solid #e2e8f0', color: '#64748b', borderRadius: 8, padding: '10px 24px', background: 'transparent' }}>Cancel</button>
+                                        <button type="submit" disabled={imageUploading || loading} className="text-sm font-bold" style={{ background: loading ? '#94a3b8' : '#0f172a', color: '#ffffff', borderRadius: 8, padding: '10px 24px', minWidth: 120 }}>
+                                            {imageUploading ? 'Uploading image...' : loading ? 'Saving...' : 'Save Changes'}
+                                        </button>
+                                    </div>
+
                                 </form>
                             </div>
                         </div>

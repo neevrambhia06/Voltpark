@@ -13,11 +13,11 @@ const OwnerDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'locations', 'bookings'
     const [selectedLayoutId, setSelectedLayoutId] = useState(null);
+    const [deletingId, setDeletingId] = useState(null);
 
     useEffect(() => {
-        if (user) {
-            fetchOwnerData();
-        }
+        if (!user) return;
+        fetchOwnerData();
     }, [user]);
 
     const fetchOwnerData = async () => {
@@ -28,7 +28,7 @@ const OwnerDashboard = () => {
             const { data: locs, error: locError } = await supabase
                 .from('locations')
                 .select('*')
-                .eq('owner_id', user.id)
+                .eq('owner_id', user?.id)
                 .order('created_at', { ascending: false });
 
             if (locError) throw locError;
@@ -57,13 +57,48 @@ const OwnerDashboard = () => {
 
     };
 
+    const handleDeleteBooking = async (bookingId) => {
+        const confirmed = window.confirm(
+            'Are you sure you want to delete this booking? ' +
+            'This action cannot be undone.'
+        );
+        if (!confirmed) return;
+
+        setDeletingId(bookingId);
+
+        try {
+            const { data, error } = await supabase
+                .rpc('delete_booking_by_owner', {
+                    p_booking_id: bookingId,
+                    p_owner_id: user?.id
+                });
+
+            if (error) throw error;
+
+            if (!data.success) {
+                alert(data.error || 'Failed to delete booking.');
+                return;
+            }
+
+            setBookings(prev =>
+                prev.filter(b => b.id !== bookingId)
+            );
+
+        } catch (err) {
+            console.error('Delete booking error:', err);
+            alert('Failed to delete booking. Please try again.');
+        } finally {
+            setDeletingId(null);
+        }
+    };
+
     // Real-time Subscription for Dashboard
     useEffect(() => {
         if (!user) return;
 
         const channel = supabase
             .channel('owner-dashboard-updates')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'locations', filter: `owner_id=eq.${user.id}` }, () => fetchOwnerData())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'locations', filter: `owner_id=eq.${user?.id}` }, () => fetchOwnerData())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => fetchOwnerData())
             .subscribe();
 
@@ -75,6 +110,45 @@ const OwnerDashboard = () => {
             clearInterval(interval);
         };
     }, [user]);
+
+    // Targeted Realtime for booking DELETE and UPDATE
+    useEffect(() => {
+        const channel = supabase
+            .channel('owner-bookings-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'bookings',
+                },
+                (payload) => {
+                    setBookings(prev =>
+                        prev.filter(b => b.id !== payload.old.id)
+                    );
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'bookings',
+                },
+                (payload) => {
+                    setBookings(prev =>
+                        prev.map(b =>
+                            b.id === payload.new.id
+                                ? { ...b, ...payload.new }
+                                : b
+                        )
+                    );
+                }
+            )
+            .subscribe();
+
+        return () => supabase.removeChannel(channel);
+    }, []);
 
     // Calculate Stats
     const totalLocations = locations.length;

@@ -75,17 +75,17 @@ const Home = () => {
                     <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-10">How It Works</h2>
                     <div className="grid md:grid-cols-3 gap-8">
                         <div className="p-4">
-                            <div className="text-5xl font-bold text-gray-100 mb-3">01</div>
+                            <div className="text-5xl font-bold text-[#00C9C8] mb-3">01</div>
                             <h3 className="text-lg font-bold mb-2">Search</h3>
                             <p className="text-gray-600 text-sm">Find the perfect spot or charging station near your destination.</p>
                         </div>
                         <div className="p-4">
-                            <div className="text-5xl font-bold text-gray-100 mb-3">02</div>
+                            <div className="text-5xl font-bold text-[#00C9C8] mb-3">02</div>
                             <h3 className="text-lg font-bold mb-2">Book</h3>
                             <p className="text-gray-600 text-sm">Reserve your space in advance to guarantee availability.</p>
                         </div>
                         <div className="p-4">
-                            <div className="text-5xl font-bold text-gray-100 mb-3">03</div>
+                            <div className="text-5xl font-bold text-[#00C9C8] mb-3">03</div>
                             <h3 className="text-lg font-bold mb-2">Park & Pay</h3>
                             <p className="text-gray-600 text-sm">Arrive, park, and pay seamlessly through the app. No tickets needed.</p>
                         </div>

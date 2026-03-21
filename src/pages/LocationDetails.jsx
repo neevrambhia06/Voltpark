@@ -414,6 +414,52 @@ const LocationDetails = () => {
                                         <p className="text-base font-medium text-secondary">{location.ev_chargers}</p>
                                     </div>
                                 )}
+                                {location.type === 'ev' && location.charging_type && (
+                                    <div>
+                                        <p style={{
+                                            fontSize: '12px',
+                                            color: '#6b7280',
+                                            marginBottom: '4px',
+                                            fontFamily: 'inherit',
+                                        }}>
+                                            Charging Type
+                                        </p>
+                                        <p style={{
+                                            fontSize: '16px',
+                                            fontWeight: 600,
+                                            fontFamily: 'inherit',
+                                            color: location.charging_type === 'fast'
+                                                ? '#f97316'
+                                                : '#00C9C8',
+                                        }}>
+                                            {location.charging_type === 'fast'
+                                                ? 'Fast Charging'
+                                                : 'Slow Charging'}
+                                        </p>
+                                    </div>
+                                )}
+                                {location.type === 'ev' && location.charging_speed_kw && (
+                                    <div>
+                                        <p style={{
+                                            fontSize: '12px',
+                                            color: '#6b7280',
+                                            marginBottom: '4px',
+                                            fontFamily: 'inherit',
+                                        }}>
+                                            Charging Speed
+                                        </p>
+                                        <p style={{
+                                            fontSize: '16px',
+                                            fontWeight: 600,
+                                            fontFamily: 'inherit',
+                                            color: location.charging_type === 'fast'
+                                                ? '#f97316'
+                                                : '#00C9C8',
+                                        }}>
+                                            {location.charging_speed_kw} kW
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

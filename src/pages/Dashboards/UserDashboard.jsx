@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
@@ -16,7 +16,7 @@ const DashboardLayout = ({ title, children }) => {
     )
 }
 
-const BookingList = ({ bookings }) => {
+const BookingList = ({ bookings, handleCancel, cancellingId }) => {
     const [selectedBooking, setSelectedBooking] = useState(null);
 
     if (bookings.length === 0) {
@@ -39,8 +39,13 @@ const BookingList = ({ bookings }) => {
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-100">
-                        {bookings.map((booking) => (
-                            <tr key={booking.id} className="hover:bg-gray-50 transition-colors group">
+                        {bookings.map((booking) => {
+                            const minutesSince = (Date.now() - new Date(booking.created_at).getTime()) / 60000;
+                            const canRefund = minutesSince <= 7;
+                            const canCancel = booking.status === 'Scheduled' || booking.status === 'confirmed';
+
+                            return (
+                                <tr key={booking.id} className="hover:bg-gray-50 transition-colors group">
                                 <td className="table-cell px-3 py-2">
                                     <div className="font-mono text-gray-500 text-xs">#{booking.id.slice(0, 8)}</div>
                                 </td>
@@ -84,6 +89,36 @@ const BookingList = ({ bookings }) => {
                                         }`}>
                                         {booking.status === 'confirmed' ? 'Confirmed' : booking.status || 'Scheduled'}
                                     </span>
+                                    {booking.refund_status === 'processed' && (
+                                        <p style={{
+                                            fontSize: '12px',
+                                            color: '#16a34a',
+                                            marginTop: '8px',
+                                            fontFamily: 'inherit',
+                                        }}>
+                                            Refund of Rs.{booking.refund_amount} processed
+                                        </p>
+                                    )}
+                                    {booking.refund_status === 'pending' && (
+                                        <p style={{
+                                            fontSize: '12px',
+                                            color: '#d97706',
+                                            marginTop: '8px',
+                                            fontFamily: 'inherit',
+                                        }}>
+                                            Refund of Rs.{booking.refund_amount} is being processed
+                                        </p>
+                                    )}
+                                    {booking.refund_status === 'not_eligible' && (
+                                        <p style={{
+                                            fontSize: '12px',
+                                            color: '#6b7280',
+                                            marginTop: '8px',
+                                            fontFamily: 'inherit',
+                                        }}>
+                                            Cancelled without refund
+                                        </p>
+                                    )}
                                 </td>
                                 <td className="table-cell px-3 py-2 text-right">
                                     <button
@@ -92,9 +127,60 @@ const BookingList = ({ bookings }) => {
                                     >
                                         <QrCode size={14} className="mr-1.5" /> Barcode
                                     </button>
+
+                                    {canCancel && (
+                                        <div style={{ marginTop: '12px' }}>
+                                            {canRefund && (
+                                                <p style={{
+                                                    fontSize: '12px',
+                                                    color: '#16a34a',
+                                                    marginBottom: '8px',
+                                                    fontFamily: 'inherit',
+                                                }}>
+                                                    Cancel within {Math.ceil(7 - minutesSince)} min
+                                                    for a full refund of Rs.{booking.amount}
+                                                </p>
+                                            )}
+
+                                            {!canRefund && (
+                                                <p style={{
+                                                    fontSize: '12px',
+                                                    color: '#6b7280',
+                                                    marginBottom: '8px',
+                                                    fontFamily: 'inherit',
+                                                }}>
+                                                    Refund window has passed.
+                                                    Cancellation will not include a refund.
+                                                </p>
+                                            )}
+
+                                            <button
+                                                onClick={() => handleCancel(booking)}
+                                                disabled={cancellingId === booking.id}
+                                                style={{
+                                                    background: canRefund ? '#dc2626' : '#6b7280',
+                                                    color: '#ffffff',
+                                                    border: 'none',
+                                                    borderRadius: '8px',
+                                                    padding: '8px 16px',
+                                                    fontSize: '13px',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+                                                    fontFamily: 'inherit',
+                                                }}
+                                            >
+                                                {cancellingId === booking.id
+                                                    ? 'Cancelling...'
+                                                    : canRefund
+                                                        ? 'Cancel and Get Full Refund'
+                                                        : 'Cancel Booking'}
+                                            </button>
+                                        </div>
+                                    )}
                                 </td>
                             </tr>
-                        ))}
+                            )
+                        })}
                     </tbody>
                 </table>
             </div>
@@ -110,42 +196,92 @@ const BookingList = ({ bookings }) => {
 export const UserDashboard = () => {
     const { user } = useAuth();
     const [bookings, setBookings] = useState([]);
+    const [cancellingId, setCancellingId] = useState(null);
+
+    const fetchBookings = useCallback(async (signal) => {
+        try {
+            let query = supabase
+                .from('bookings')
+                .select('*, locations(name)')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false });
+            
+            if (signal && signal instanceof AbortSignal) {
+                query = query.abortSignal(signal);
+            }
+
+            const { data, error } = await query;
+
+            if (error) throw error;
+            setBookings(data || []);
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                console.warn('VOLTPARK: Bookings fetch timed out');
+            } else {
+                console.error('VOLTPARK: Bookings fetch error:', err);
+            }
+        }
+    }, [user.id]);
+
+    const handleCancel = async (booking) => {
+        const confirmed = window.confirm(
+            'Are you sure you want to cancel this booking?'
+        )
+        if (!confirmed) return
+
+        setCancellingId(booking.id)
+
+        try {
+            const { data, error } = await supabase
+                .rpc('cancel_booking', {
+                    p_booking_id: booking.id,
+                    p_user_id: user.id,
+                    p_reason: 'Cancelled by user'
+                })
+
+            if (error) throw error
+
+            if (data.refund_eligible && data.razorpay_payment_id) {
+                // Call edge function to process refund
+                await supabase.functions.invoke('process-refund', {
+                    body: {
+                        booking_id: booking.id,
+                        razorpay_payment_id: data.razorpay_payment_id,
+                        amount: data.refund_amount
+                    }
+                })
+            }
+
+            // Refresh bookings list
+            fetchBookings()
+
+        } catch (err) {
+            alert('Failed to cancel booking. Please try again.')
+            console.error(err)
+        } finally {
+            setCancellingId(null)
+        }
+    }
 
     useEffect(() => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        const fetchBookings = async () => {
-            try {
-                const { data, error } = await supabase
-                    .from('bookings')
-                    .select('*, locations(name)')
-                    .eq('user_id', user.id)
-                    .order('created_at', { ascending: false })
-                    .abortSignal(controller.signal);
-
-                if (error) throw error;
-                setBookings(data || []);
-            } catch (err) {
-                if (err.name === 'AbortError') {
-                    console.warn('VOLTPARK: Bookings fetch timed out');
-                } else {
-                    console.error('VOLTPARK: Bookings fetch error:', err);
-                }
-            } finally {
-                clearTimeout(timeoutId);
-            }
-        }
-        if (user) fetchBookings();
+        if (user) fetchBookings(controller.signal);
+        
         return () => {
             controller.abort();
             clearTimeout(timeoutId);
         };
-    }, [user]);
+    }, [user, fetchBookings]);
 
     return (
         <DashboardLayout title="My Bookings">
-            <BookingList bookings={bookings} />
+            <BookingList 
+                bookings={bookings} 
+                handleCancel={handleCancel}
+                cancellingId={cancellingId}
+            />
         </DashboardLayout>
     )
 }

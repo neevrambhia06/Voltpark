@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Link, useSearchParams } from 'react-router-dom';
-import { MapPin, Zap, Filter, Search, Car, Bike } from 'lucide-react';
+import { MapPin, Zap, Filter, Search, Car, Bike, Plug } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { SEED_LOCATIONS } from '../lib/seedData';
 
@@ -12,6 +12,8 @@ const Locations = ({ type }) => {
     const [searchParams] = useSearchParams();
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('all');
+    const [activeFilter, setActiveFilter] = useState('all');
+    const [sortBy, setSortBy] = useState('default');
 
     useEffect(() => {
         fetchLocations();
@@ -83,25 +85,51 @@ const Locations = ({ type }) => {
     };
 
     // Filter logic
-    const filteredLocations = locations.filter((location) => {
-        const matchesSearch =
-            location.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            location.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            location.address.toLowerCase().includes(searchTerm.toLowerCase());
+    const filteredLocations = locations
+        .filter((location) => {
+            const matchesSearch =
+                location.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                location.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                location.address.toLowerCase().includes(searchTerm.toLowerCase());
 
-        const matchesType =
-            type !== 'all'
-                ? true
-                : filterType === 'all'
+            const matchesType =
+                type !== 'all'
+                    ? location.type === type
+                    : filterType === 'all'
+                        ? true
+                        : filterType === 'car'
+                            ? location.type === 'parking' && (location.car_total_slots > 0)
+                            : filterType === 'bike'
+                                ? location.type === 'parking' && (location.bike_total_slots > 0)
+                                : location.type === filterType;
+
+            const matchesChargingFilter =
+                type !== 'ev' || activeFilter === 'all'
                     ? true
-                    : filterType === 'car'
-                        ? location.type === 'parking' && (location.car_total_slots > 0)
-                        : filterType === 'bike'
-                            ? location.type === 'parking' && (location.bike_total_slots > 0)
-                            : location.type === filterType;
+                    : location.charging_type === activeFilter;
 
-        return matchesSearch && matchesType;
-    });
+            const matchesParkingFilter =
+                type !== 'parking' || activeFilter === 'all'
+                    ? true
+                    : activeFilter === 'car'
+                        ? (location.car_available_slots ?? 0) > 0
+                        : activeFilter === 'bike'
+                            ? (location.bike_available_slots ?? 0) > 0
+                            : true;
+
+            return matchesSearch && matchesType && matchesChargingFilter && matchesParkingFilter;
+        })
+        .sort((a, b) => {
+            if (type !== 'parking') return 0;
+            
+            if (sortBy === 'price_asc')
+                return (a.price_per_hour ?? 0) - (b.price_per_hour ?? 0);
+            if (sortBy === 'price_desc')
+                return (b.price_per_hour ?? 0) - (a.price_per_hour ?? 0);
+            if (sortBy === 'slots')
+                return (b.car_available_slots ?? 0) - (a.car_available_slots ?? 0);
+            return 0;
+        });
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -112,16 +140,18 @@ const Locations = ({ type }) => {
             {/* Search and Filter Section */}
             <div className="mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
                 <div className="relative w-full md:w-96">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Search className="h-5 w-5 text-gray-400" />
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Search by location name, city, or area..."
+                            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-full leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm transition duration-150 ease-in-out shadow-sm"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
                     </div>
-                    <input
-                        type="text"
-                        placeholder="Search by location name, city, or area..."
-                        className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-full leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm transition duration-150 ease-in-out shadow-sm"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
                 </div>
 
                 {type === 'all' && (
@@ -150,7 +180,87 @@ const Locations = ({ type }) => {
                         ))}
                     </div>
                 )}
+
+                {type === 'ev' && (
+                    <div className="flex items-center gap-4">
+                        <div className="flex flex-wrap gap-1 bg-white/70 backdrop-blur-md rounded-full p-1.5 shadow-sm border border-gray-200/50 relative overflow-hidden">
+                            {[
+                                { label: 'ALL', value: 'all', icon: null },
+                                { label: 'FAST CHARGING', value: 'fast', icon: Zap },
+                                { label: 'SLOW CHARGING', value: 'slow', icon: Plug },
+                            ].map(tab => {
+                                const isActive = activeFilter === tab.value;
+                                const Icon = tab.icon;
+                                return (
+                                    <button
+                                        key={tab.value}
+                                        onClick={() => setActiveFilter(tab.value)}
+                                        className={`relative px-5 py-2 text-xs font-extrabold uppercase tracking-wider transition-colors duration-200 rounded-full z-10 flex items-center gap-1.5 ${isActive
+                                            ? 'text-white'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                    >
+                                        {isActive && (
+                                            <motion.div
+                                                layoutId="liquid-filter-bg-ev"
+                                                className="absolute inset-0 bg-slate-900 rounded-full -z-10 shadow-lg"
+                                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                            />
+                                        )}
+                                        {Icon && <Icon size={14} className={isActive ? (tab.value === 'fast' ? 'text-orange-300' : 'text-blue-300') : 'text-slate-400'} />}
+                                        {tab.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {type === 'parking' && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '5px',
+                        background: 'rgba(255, 255, 255, 0.18)',
+                        backdropFilter: 'blur(20px)',
+                        WebkitBackdropFilter: 'blur(20px)',
+                        border: '1px solid rgba(255, 255, 255, 0.35)',
+                        borderRadius: '9999px',
+                        boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
+                    }}>
+                        {[
+                            { label: 'ALL', value: 'all', icon: null },
+                            { label: 'CAR', value: 'car', icon: Car },
+                            { label: 'BIKE', value: 'bike', icon: Bike },
+                        ].map(tab => {
+                            const isActive = activeFilter === tab.value;
+                            const Icon = tab.icon;
+                            return (
+                                <button
+                                    key={tab.value}
+                                    onClick={() => setActiveFilter(tab.value)}
+                                    className={`relative px-5 py-2 text-xs font-extrabold uppercase tracking-wider transition-colors duration-200 rounded-full z-10 flex items-center gap-1.5 ${isActive
+                                        ? 'text-white'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                >
+                                    {isActive && (
+                                        <motion.div
+                                            layoutId="liquid-filter-bg-parking"
+                                            className="absolute inset-0 bg-slate-900 rounded-full -z-10 shadow-lg"
+                                            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                        />
+                                    )}
+                                    {Icon && <Icon size={14} className={isActive ? (tab.value === 'car' ? 'text-blue-300' : 'text-orange-300') : 'text-slate-400'} />}
+                                    {tab.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
+
 
             {loading ? (
                 <div className="text-center py-20 text-xl font-medium">Loading locations...</div>
@@ -174,7 +284,38 @@ const Locations = ({ type }) => {
                                 </div>
                             </div>
                             <div className="flex-grow">
-                                <h3 className="text-sm font-bold text-slate-900 mb-1 group-hover:text-primary transition-colors">{location.name}</h3>
+                                <h3 className="text-sm font-bold text-slate-900 mb-1 group-hover:text-primary transition-colors">
+                                    {location.name}
+                                    {location.type === 'ev' && location.charging_type && (
+                                        <span style={{
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            padding: '2px 10px',
+                                            borderRadius: '9999px',
+                                            marginLeft: '8px',
+                                            background: location.charging_type === 'fast'
+                                                ? 'rgba(249, 115, 22, 0.12)'
+                                                : 'rgba(0, 201, 200, 0.12)',
+                                            color: location.charging_type === 'fast'
+                                                ? '#f97316'
+                                                : '#00C9C8',
+                                            border: `1px solid ${
+                                                location.charging_type === 'fast'
+                                                    ? 'rgba(249,115,22,0.30)'
+                                                    : 'rgba(0,201,200,0.30)'
+                                            }`,
+                                            fontFamily: 'inherit',
+                                        }}>
+                                            {location.charging_type === 'fast'
+                                                ? 'Fast' + (location.charging_speed_kw
+                                                    ? ' ' + location.charging_speed_kw + 'kW'
+                                                    : ' Charging')
+                                                : 'Slow' + (location.charging_speed_kw
+                                                    ? ' ' + location.charging_speed_kw + 'kW'
+                                                    : ' Charging')}
+                                        </span>
+                                    )}
+                                </h3>
                                 <p className="text-gray-600 mb-2 text-xs flex items-start">
                                     <MapPin size={12} className="mr-1 mt-0.5 flex-shrink-0 text-gray-400" />
                                     {location.address}, {location.city}

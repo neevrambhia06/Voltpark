@@ -23,10 +23,8 @@ import Contact from './pages/Contact';
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, userRole, loading } = useAuth();
 
-  // If we are globally loading and HAVE NO USER, show the spinner.
-  // If we HAVE A USER but no role yet, we still show the spinner briefly (handled by internal timeouts in context)
-  // BUT if loading is false, we MUST proceed regardless.
-  if (loading && !userRole) {
+  // Wait for session to load before making any redirect decision
+  if (loading) {
     return (
       <div style={{
         minHeight: '100vh',
@@ -45,12 +43,14 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
           borderRadius: '50%',
           animation: 'spin 0.8s linear infinite',
         }} />
-        <p style={{ color: '#8B949E', fontSize: '13px', fontFamily: 'inherit' }}>Securing your session...</p>
+        <p style={{ color: '#8B949E', fontSize: '13px', fontFamily: 'inherit' }}>Restoring session...</p>
       </div>
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
   const effectiveRole = userRole || 'user'; // Fallback to 'user' if still null after loading
 
@@ -70,9 +70,9 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/owner-login" element={<OwnerLogin />} />
+        <Route path="/owner/login" element={<OwnerLogin />} />
         <Route path="/owner-register" element={<OwnerRegister />} />
-        <Route path="/admin-login" element={<AdminLogin />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/create-new-admin" element={<CreateAdmin />} />
 
         <Route path="/about" element={<About />} />
