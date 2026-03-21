@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Login from './pages/Auth/Login';
@@ -65,6 +65,8 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 };
 
 function App() {
+  const location = useLocation();
+
   return (
     <Layout>
       <Routes>
@@ -79,9 +81,9 @@ function App() {
         <Route path="/contact" element={<Contact />} />
 
         {/* Public or Semi-public */}
-        <Route path="/locations" element={<Locations type="all" />} />
-        <Route path="/parking" element={<Locations type="parking" />} />
-        <Route path="/ev-charging" element={<Locations type="ev" />} />
+        <Route path="/locations" element={<Locations key={location.pathname} type="all" />} />
+        <Route path="/parking" element={<Locations key={location.pathname} type="parking" />} />
+        <Route path="/ev-charging" element={<Locations key={location.pathname} type="ev" />} />
         <Route path="/locations/:id" element={<LocationDetails />} />
 
         {/* Protected Portals */}

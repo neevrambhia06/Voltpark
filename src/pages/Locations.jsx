@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { MapPin, Zap, Filter, Search, Car, Bike, Plug } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { SEED_LOCATIONS } from '../lib/seedData';
@@ -14,6 +14,16 @@ const Locations = ({ type }) => {
     const [filterType, setFilterType] = useState('all');
     const [activeFilter, setActiveFilter] = useState('all');
     const [sortBy, setSortBy] = useState('default');
+    const location = useLocation();
+
+    // Reset all filters to default on every navigation to this page
+    useEffect(() => {
+        setFilterType('all');
+        setActiveFilter('all');
+        setSearchTerm('');
+        setSortBy('default');
+    }, [location.pathname]);
+
 
     useEffect(() => {
         fetchLocations();
