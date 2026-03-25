@@ -6,6 +6,7 @@ import { Plus, Edit, Trash2, MapPin, Calendar, DollarSign, BarChart3, Clock, Che
 import { format } from 'date-fns';
 import BarcodeModal from '../../components/BarcodeModal';
 import { uploadLocationImage } from '../../utils/uploadImage';
+import { geocodeAddress } from '../../utils/geoapify';
 
 const OwnerPortal = () => {
     const { user, approvalStatus } = useAuth(); // Get approval status
@@ -27,14 +28,20 @@ const OwnerPortal = () => {
         type: 'parking',
         price: '', // Used for ev or legacy
         slots: '', // Used for ev or legacy
+        car_slots: '',
         car_price: '',
         bike_slots: '',
         bike_price: '',
         charging_type: null,
-        charging_speed_kw: ''
+        charging_speed_kw: '',
+        latitude: null,
+        longitude: null,
+        area: ''
     });
 
-    const [editingLoc, setEditingLoc] = useState(null);
+    const [editingLoc, setEditingLoc] = useState({
+        name: '', address: '', city: '', area: '', type: 'parking', price: '', slots: '', latitude: null, longitude: null
+    });
 
     // Image Upload State
     const [imageFile, setImageFile] = useState(null);
@@ -42,6 +49,8 @@ const OwnerPortal = () => {
     const [imageUploading, setImageUploading] = useState(false);
     const [imageError, setImageError] = useState(null);
     const [existingImageUrl, setExistingImageUrl] = useState(null);
+    const [geocodingAddress, setGeocodingAddress] = useState(false);
+    const [geocodingStatus, setGeocodingStatus] = useState(null); // 'loading', 'success', 'error'
 
     const isApproved = approvalStatus === 'approved';
     const authLoading = false; // Assuming handled by useAuth or parent
@@ -174,6 +183,63 @@ const OwnerPortal = () => {
         setImagePreview(URL.createObjectURL(file));
     };
 
+    const handleAddressBlur = async () => {
+        if (!newLoc.address || !newLoc.city) return;
+        
+        setGeocodingAddress(true);
+        setGeocodingStatus('loading');
+        
+        try {
+            const fullAddress = `${newLoc.address}, ${newLoc.area || ''}, ${newLoc.city}, India`;
+            const result = await geocodeAddress(fullAddress);
+            if (result) {
+                setNewLoc(prev => ({ 
+                    ...prev, 
+                    latitude: result.lat, 
+                    longitude: result.lng 
+                }));
+                setGeocodingStatus('success');
+            } else {
+                setGeocodingStatus('error');
+            }
+        } catch (err) {
+            console.error("Geocoding error:", err);
+            setGeocodingStatus('error');
+        } finally {
+            setGeocodingAddress(false);
+            // Clear success message after 3s
+            setTimeout(() => setGeocodingStatus(null), 3000);
+        }
+    };
+
+    const handleEditAddressBlur = async () => {
+        if (!editingLoc.address || !editingLoc.city) return;
+        
+        setGeocodingAddress(true);
+        setGeocodingStatus('loading');
+        
+        try {
+            const fullAddress = `${editingLoc.address}, ${editingLoc.area || ''}, ${editingLoc.city}, India`;
+            const result = await geocodeAddress(fullAddress);
+            if (result) {
+                setEditingLoc(prev => ({ 
+                    ...prev, 
+                    latitude: result.lat, 
+                    longitude: result.lng 
+                }));
+                setGeocodingStatus('success');
+            } else {
+                setGeocodingStatus('error');
+            }
+        } catch (err) {
+            console.error("Geocoding error:", err);
+            setGeocodingStatus('error');
+        } finally {
+            setGeocodingAddress(false);
+            setTimeout(() => setGeocodingStatus(null), 3000);
+        }
+    };
+
     const handleAddLocation = async (e) => {
         e.preventDefault();
 
@@ -206,10 +272,13 @@ const OwnerPortal = () => {
                 owner_id: user.id,
                 name: newLoc.name,
                 address: newLoc.address,
+                area: newLoc.area,
                 city: newLoc.city,
                 type: newLoc.type,
                 price_per_hour: parseFloat(newLoc.price || 0),
                 total_slots: parseInt(newLoc.slots || 0),
+                latitude: newLoc.latitude,
+                longitude: newLoc.longitude,
                 available_slots: parseInt(newLoc.slots || 0),
 
                 // New Fields
@@ -220,9 +289,11 @@ const OwnerPortal = () => {
                 bike_total_slots: parseInt(newLoc.bike_slots || 0),
                 bike_available_slots: parseInt(newLoc.bike_slots || 0),
                 bike_price_per_hour: parseFloat(newLoc.bike_price || 0),
-                charging_type: newLoc.charging_type,
+                charge_type: newLoc.charging_type,
                 charging_speed_kw: newLoc.charging_speed_kw ? parseFloat(newLoc.charging_speed_kw) : null,
-                image_url: imageUrl
+                image_url: imageUrl,
+                latitude: newLoc.latitude,
+                longitude: newLoc.longitude
             }]);
 
             if (error) throw error;
@@ -231,7 +302,8 @@ const OwnerPortal = () => {
             setIsAddModalOpen(false);
             setNewLoc({
                 name: '', address: '', city: '', type: 'parking', price: '', slots: '',
-                car_slots: '', car_price: '', bike_slots: '', bike_price: ''
+                car_slots: '', car_price: '', bike_slots: '', bike_price: '',
+                latitude: null, longitude: null
             });
             setImageFile(null);
             setImagePreview(null);
@@ -279,8 +351,11 @@ const OwnerPortal = () => {
             const updates = {
                 name: editingLoc.name,
                 address: editingLoc.address,
+                area: editingLoc.area,
                 city: editingLoc.city,
                 type: editingLoc.type,
+                latitude: editingLoc.latitude,
+                longitude: editingLoc.longitude,
                 price_per_hour: parseFloat(editingLoc.price_per_hour || 0),
                 total_slots: parseInt(editingLoc.total_slots || 0),
                 charging_type: editingLoc.charging_type,
@@ -347,7 +422,12 @@ const OwnerPortal = () => {
     };
 
     const openEditModal = (loc) => {
-        setEditingLoc(loc);
+        setEditingLoc({
+            ...loc,
+            area: loc.area || '',
+            latitude: loc.latitude || null,
+            longitude: loc.longitude || null
+        });
         setImagePreview(loc.image_url || null);
         setExistingImageUrl(loc.image_url || null);
         setImageFile(null);
@@ -850,14 +930,47 @@ const OwnerPortal = () => {
                                         <label className="block text-gray-700 font-bold mb-2">Address</label>
                                         <input type="text" required
                                             className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                            value={newLoc.address} onChange={e => setNewLoc({ ...newLoc, address: e.target.value })} placeholder="Street Address" />
+                                            value={newLoc.address} 
+                                            onChange={e => setNewLoc({ ...newLoc, address: e.target.value })} 
+                                            onBlur={handleAddressBlur} 
+                                            placeholder="Street, Building, Landmark" 
+                                        />
                                     </div>
-                                    <div>
-                                        <label className="block text-gray-700 font-bold mb-2">City</label>
-                                        <input type="text" required
-                                            className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                            value={newLoc.city} onChange={e => setNewLoc({ ...newLoc, city: e.target.value })} placeholder="City" />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-gray-700 font-bold mb-2 text-sm">Area / Locality</label>
+                                            <input type="text" 
+                                                className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary outline-none"
+                                                value={newLoc.area || ''} 
+                                                onChange={e => setNewLoc({ ...newLoc, area: e.target.value })} 
+                                                onBlur={handleAddressBlur}
+                                                placeholder="e.g. Bandra West" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-gray-700 font-bold mb-2 text-sm">City</label>
+                                            <input type="text" required
+                                                className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary outline-none"
+                                                value={newLoc.city} 
+                                                onChange={e => setNewLoc({ ...newLoc, city: e.target.value })} 
+                                                onBlur={handleAddressBlur}
+                                                placeholder="City" 
+                                            />
+                                        </div>
                                     </div>
+
+                                    {/* Geocoding Status */}
+                                    {geocodingStatus && (
+                                        <div className={`text-xs font-bold px-3 py-1 rounded-full w-fit ${
+                                            geocodingStatus === 'loading' ? 'bg-blue-50 text-blue-600 animate-pulse' :
+                                            geocodingStatus === 'success' ? 'bg-green-50 text-green-600' :
+                                            'bg-red-50 text-red-600'
+                                        }`}>
+                                            {geocodingStatus === 'loading' && '📍 Finding coordinates...'}
+                                            {geocodingStatus === 'success' && '✅ Geocoded successfully'}
+                                            {geocodingStatus === 'error' && '❌ Could not find location. Please check address.'}
+                                        </div>
+                                    )}
 
                                     {newLoc.type === 'parking' ? (
                                         <>
@@ -1031,8 +1144,51 @@ const OwnerPortal = () => {
 
                                         <div>
                                             <label className="block mb-2 text-[13px] font-semibold" style={{ color: '#374151' }}>Address</label>
-                                            <input type="text" required value={editingLoc.address} onChange={e => setEditingLoc({ ...editingLoc, address: e.target.value })} className="w-full outline-none transition" style={{ padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }} />
+                                            <input type="text" required 
+                                                value={editingLoc.address} 
+                                                onChange={e => setEditingLoc({ ...editingLoc, address: e.target.value })} 
+                                                onBlur={handleEditAddressBlur}
+                                                className="w-full outline-none transition" 
+                                                style={{ padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }} 
+                                            />
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-5">
+                                            <div>
+                                                <label className="block mb-2 text-[13px] font-semibold" style={{ color: '#374151' }}>Area / Locality</label>
+                                                <input type="text" 
+                                                    value={editingLoc.area || ''} 
+                                                    onChange={e => setEditingLoc({ ...editingLoc, area: e.target.value })} 
+                                                    onBlur={handleEditAddressBlur}
+                                                    className="w-full outline-none transition" 
+                                                    style={{ padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }} 
+                                                    placeholder="e.g. Bandra West"
+                                                />
                                             </div>
+                                            <div>
+                                                <label className="block mb-2 text-[13px] font-semibold" style={{ color: '#374151' }}>City</label>
+                                                <input type="text" required 
+                                                    value={editingLoc.city} 
+                                                    onChange={e => setEditingLoc({ ...editingLoc, city: e.target.value })} 
+                                                    onBlur={handleEditAddressBlur}
+                                                    className="w-full outline-none transition" 
+                                                    style={{ padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }} 
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Geocoding Status */}
+                                        {geocodingStatus && (
+                                            <div className={`text-[10px] font-bold px-2 py-1 rounded-md mt-2 w-fit ${
+                                                geocodingStatus === 'loading' ? 'bg-blue-50 text-blue-600' :
+                                                geocodingStatus === 'success' ? 'bg-green-50 text-green-600' :
+                                                'bg-red-50 text-red-600'
+                                            }`}>
+                                                {geocodingStatus === 'loading' && '📍 Finding coordinates...'}
+                                                {geocodingStatus === 'success' && '✅ Coordinates updated'}
+                                                {geocodingStatus === 'error' && '❌ Location not found'}
+                                            </div>
+                                        )}
 
                                         {/* Pricing / Slots */}
                                         <div className="grid grid-cols-2 gap-5">

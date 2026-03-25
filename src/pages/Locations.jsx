@@ -5,6 +5,8 @@ import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { MapPin, Zap, Filter, Search, Car, Bike, Plug } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { SEED_LOCATIONS } from '../lib/seedData';
+import GeoapifyMap from '../components/GeoapifyMap';
+import { haversine } from '../utils/geoapify';
 
 const Locations = ({ type }) => {
     const [locations, setLocations] = useState([]);
@@ -16,6 +18,11 @@ const Locations = ({ type }) => {
     const [sortBy, setSortBy] = useState('default');
     const location = useLocation();
 
+    // Map States
+    const [userCoords, setUserCoords] = useState(null);
+    const [flyTarget, setFlyTarget] = useState(null);
+    const [hoveredId, setHoveredId] = useState(null);
+
     // Reset all filters to default on every navigation to this page
     useEffect(() => {
         setFilterType('all');
@@ -23,6 +30,24 @@ const Locations = ({ type }) => {
         setSearchTerm('');
         setSortBy('default');
     }, [location.pathname]);
+
+    // Auto-geolocation on mount
+    useEffect(() => {
+        if (!navigator.geolocation) return;
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const coords = {
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude,
+                };
+                setUserCoords(coords);
+                setFlyTarget(coords);
+            },
+            () => {
+                // Silently ignore if denied
+            }
+        );
+    }, []);
 
 
     useEffect(() => {
@@ -65,7 +90,20 @@ const Locations = ({ type }) => {
 
         try {
             console.log("VOLTPARK: Fetching locations...");
-            let query = supabase.from('locations').select('*').order('created_at', { ascending: false });
+            let query = supabase
+                .from('locations')
+                .select(`
+                    id, name, address, city, area,
+                    type, status, latitude, longitude,
+                    price_per_hour, available_slots,
+                    car_available_slots, bike_available_slots,
+                    charging_type, charging_speed_kw,
+                    image_url, owner_id,
+                    car_total_slots, bike_total_slots,
+                    car_price_per_hour, bike_price_per_hour
+                `)
+                .eq('status', 'approved')
+                .order('created_at', { ascending: false });
 
             if (type !== 'all') {
                 query = query.eq('type', type);
@@ -141,9 +179,18 @@ const Locations = ({ type }) => {
             return 0;
         });
 
+    const handleNearMe = () => {
+        if (!userCoords) return;
+        const sorted = [...filteredLocations].sort((a,b) =>
+            haversine(userCoords.lat, userCoords.lng, a.latitude, a.longitude) -
+            haversine(userCoords.lat, userCoords.lng, b.latitude, b.longitude)
+        );
+        setLocations(sorted);
+    };
+
     return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-            <h1 className="text-3xl font-bold text-slate-900 mb-8 capitalize">
+        <div style={{ maxWidth: '1400px' }} className="mx-auto px-4 sm:px-6 lg:px-8 py-10">
+            <h1 style={{ fontSize: '28px', fontWeight: 700 }} className="text-slate-900 mb-8 capitalize">
                 {type === 'all' ? 'All Locations' : type === 'ev' ? 'EV Charging Stations' : 'Parking Spots'}
             </h1>
 
@@ -163,6 +210,8 @@ const Locations = ({ type }) => {
                         />
                     </div>
                 </div>
+
+
 
                 {type === 'all' && (
                     <div className="flex flex-wrap gap-1 bg-white/70 backdrop-blur-md rounded-full p-1.5 shadow-sm border border-gray-200/50 relative overflow-hidden">
@@ -273,97 +322,190 @@ const Locations = ({ type }) => {
 
 
             {loading ? (
-                <div className="text-center py-20 text-xl font-medium">Loading locations...</div>
-            ) : filteredLocations.length === 0 ? (
-                <div className="text-center py-20 bg-white rounded-lg shadow">
-                    <p className="text-xl text-gray-500">No locations found for this search.</p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {filteredLocations.map((location) => (
-                        <Link key={location.id} to={`/locations/${location.id}`} className="card flex flex-col h-full group hover:no-underline p-3">
-                            <div className="h-32 bg-gray-200 rounded-md mb-2 overflow-hidden relative">
-                                <img
-                                    src={location.image_url || 'https://images.unsplash.com/photo-1590674899484-d5640e854abe?auto=format&fit=crop&q=80'}
-                                    alt={location.name}
-                                    className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
-                                />
-                                <div className="absolute top-1 right-1 bg-white px-1.5 py-0.5 rounded-full text-[10px] font-bold shadow flex items-center">
-                                    {location.type === 'ev' ? <Zap size={10} className="text-secondary mr-1" /> : <MapPin size={10} className="text-primary mr-1" />}
-                                    <span className="uppercase text-[10px]">{location.type}</span>
-                                </div>
-                            </div>
-                            <div className="flex-grow">
-                                <h3 className="text-sm font-bold text-slate-900 mb-1 group-hover:text-primary transition-colors">
-                                    {location.name}
-                                    {location.type === 'ev' && location.charging_type && (
-                                        <span style={{
-                                            fontSize: '11px',
-                                            fontWeight: 600,
-                                            padding: '2px 10px',
-                                            borderRadius: '9999px',
-                                            marginLeft: '8px',
-                                            background: location.charging_type === 'fast'
-                                                ? 'rgba(249, 115, 22, 0.12)'
-                                                : 'rgba(0, 201, 200, 0.12)',
-                                            color: location.charging_type === 'fast'
-                                                ? '#f97316'
-                                                : '#00C9C8',
-                                            border: `1px solid ${
-                                                location.charging_type === 'fast'
-                                                    ? 'rgba(249,115,22,0.30)'
-                                                    : 'rgba(0,201,200,0.30)'
-                                            }`,
-                                            fontFamily: 'inherit',
-                                        }}>
-                                            {location.charging_type === 'fast'
-                                                ? 'Fast' + (location.charging_speed_kw
-                                                    ? ' ' + location.charging_speed_kw + 'kW'
-                                                    : ' Charging')
-                                                : 'Slow' + (location.charging_speed_kw
-                                                    ? ' ' + location.charging_speed_kw + 'kW'
-                                                    : ' Charging')}
-                                        </span>
-                                    )}
-                                </h3>
-                                <p className="text-gray-600 mb-2 text-xs flex items-start">
-                                    <MapPin size={12} className="mr-1 mt-0.5 flex-shrink-0 text-gray-400" />
-                                    {location.address}, {location.city}
-                                </p>
-                                {location.type === 'parking' ? (
-                                    <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-gray-100">
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] text-gray-400 font-bold mb-0.5 flex items-center"><Car size={10} className="mr-1" /> Car</span>
-                                            <span className="text-xs font-bold text-gray-900">₹{location.car_price_per_hour}/hr</span>
-                                            <span className={`${location.car_available_slots > 0 ? 'text-green-600' : 'text-red-500'} text-[9px] font-bold`}>
-                                                {location.car_available_slots} / {location.car_total_slots} left
-                                            </span>
-                                        </div>
-                                        <div className="flex flex-col border-l border-gray-100 pl-2">
-                                            <span className="text-[10px] text-gray-400 font-bold mb-0.5 flex items-center"><Bike size={10} className="mr-1" /> Bike</span>
-                                            <span className="text-xs font-bold text-gray-900">₹{location.bike_price_per_hour}/hr</span>
-                                            <span className={`${location.bike_available_slots > 0 ? 'text-green-600' : 'text-red-500'} text-[9px] font-bold`}>
-                                                {location.bike_available_slots} / {location.bike_total_slots} left
-                                            </span>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="flex justify-between items-center text-xs text-gray-700 mb-2 mt-2">
-                                        <span className="bg-blue-50 px-1.5 py-0.5 rounded text-blue-700 font-bold text-[10px]">
-                                            ₹{location.price_per_hour}/hr
-                                        </span>
-                                        <span className={`${location.available_slots > 0 ? 'text-green-600' : 'text-red-500'} font-bold text-[10px]`}>
-                                            {location.available_slots} / {location.total_slots} slots
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="w-full btn-primary text-center mt-auto py-1.5 text-xs rounded-md">
-                                View
-                            </div>
-                        </Link>
+                <div
+                    className="locations-grid"
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                        gap: '20px',
+                    }}
+                >
+                    {[...Array(6)].map((_, i) => (
+                        <div key={i} className="card p-3 h-64 bg-white animate-pulse rounded-xl border border-gray-100">
+                            <div className="h-32 bg-gray-200 rounded-lg mb-4"></div>
+                            <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                            <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                        </div>
                     ))}
                 </div>
+            ) : filteredLocations.length === 0 ? (
+                <div style={{
+                    textAlign: 'center',
+                    padding: '48px 24px',
+                    color: '#94a3b8',
+                    fontSize: '14px',
+                    fontFamily: 'inherit',
+                }}>
+                    No locations found. Try a different search or filter.
+                </div>
+            ) : (
+                <>
+                    {/* ── FULL WIDTH MAP ── */}
+                    <div className="locations-map-container" style={{
+                        width: '100%',
+                        height: '480px',
+                        borderRadius: '16px',
+                        overflow: 'hidden',
+                        border: '1px solid #e2e8f0',
+                        marginTop: '20px',
+                        marginBottom: '32px',
+                        boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+                    }}>
+                        <GeoapifyMap
+                            locations={filteredLocations}
+                            userCoords={userCoords}
+                            flyTarget={flyTarget}
+                            hoveredId={hoveredId}
+                            onMarkerClick={(id) => {
+                                document.getElementById(`card-${id}`)?.scrollIntoView({
+                                    behavior: 'smooth',
+                                    block: 'center',
+                                });
+                                setHoveredId(id);
+                            }}
+                            height="100%"
+                        />
+                    </div>
+
+                    {/* ── RESULTS COUNT ── */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '20px',
+                    }}>
+                        <p style={{
+                            fontSize: '14px',
+                            color: '#64748b',
+                            fontFamily: 'inherit',
+                        }}>
+                            {filteredLocations.length} locations found
+                        </p>
+                    </div>
+
+                    {/* ── LOCATION CARDS GRID ── */}
+                    <div
+                        className="locations-grid"
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                            gap: '20px',
+                        }}
+                    >
+                        {filteredLocations.map((location) => (
+                            <Link 
+                                key={location.id} 
+                                id={`card-${location.id}`}
+                                to={`/locations/${location.id}`} 
+                                className="card flex flex-col h-full group hover:no-underline p-3"
+                                onMouseEnter={(e) => {
+                                    setHoveredId(location.id);
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.10)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    setHoveredId(null);
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = 'none';
+                                }}
+                                style={{
+                                    transition: 'transform 0.2s, box-shadow 0.2s',
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <div className="h-32 bg-gray-200 rounded-md mb-2 overflow-hidden relative">
+                                    <img
+                                        src={location.image_url || 'https://images.unsplash.com/photo-1590674899484-d5640e854abe?auto=format&fit=crop&q=80'}
+                                        alt={location.name}
+                                        className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
+                                    />
+                                    <div className="absolute top-1 right-1 bg-white px-1.5 py-0.5 rounded-full text-[10px] font-bold shadow flex items-center">
+                                        {location.type === 'ev' ? <Zap size={10} className="text-secondary mr-1" /> : <MapPin size={10} className="text-primary mr-1" />}
+                                        <span className="uppercase text-[10px]">{location.type}</span>
+                                    </div>
+                                </div>
+                                <div className="flex-grow">
+                                    <h3 className="text-sm font-bold text-slate-900 mb-1 group-hover:text-primary transition-colors">
+                                        {location.name}
+                                        {location.type === 'ev' && location.charging_type && (
+                                            <span style={{
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                padding: '2px 10px',
+                                                borderRadius: '9999px',
+                                                marginLeft: '8px',
+                                                background: location.charging_type === 'fast'
+                                                    ? 'rgba(249, 115, 22, 0.12)'
+                                                    : 'rgba(0, 201, 200, 0.12)',
+                                                color: location.charging_type === 'fast'
+                                                    ? '#f97316'
+                                                    : '#00C9C8',
+                                                border: `1px solid ${
+                                                    location.charging_type === 'fast'
+                                                        ? 'rgba(249,115,22,0.30)'
+                                                        : 'rgba(0,201,200,0.30)'
+                                                }`,
+                                                fontFamily: 'inherit',
+                                            }}>
+                                                {location.charging_type === 'fast'
+                                                    ? 'Fast' + (location.charging_speed_kw
+                                                        ? ' ' + location.charging_speed_kw + 'kW'
+                                                        : ' Charging')
+                                                    : 'Slow' + (location.charging_speed_kw
+                                                        ? ' ' + location.charging_speed_kw + 'kW'
+                                                        : ' Charging')}
+                                            </span>
+                                        )}
+                                    </h3>
+                                    <p className="text-gray-600 mb-2 text-xs flex items-start">
+                                        <MapPin size={12} className="mr-1 mt-0.5 flex-shrink-0 text-gray-400" />
+                                        {location.address}, {location.area ? `${location.area}, ` : ''}{location.city}
+                                    </p>
+                                    {location.type === 'parking' ? (
+                                        <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-gray-100">
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] text-gray-400 font-bold mb-0.5 flex items-center"><Car size={10} className="mr-1" /> Car</span>
+                                                <span className="text-xs font-bold text-gray-900">₹{location.car_price_per_hour}/hr</span>
+                                                <span className={`${location.car_available_slots > 0 ? 'text-green-600' : 'text-red-500'} text-[9px] font-bold`}>
+                                                    {location.car_available_slots} / {location.car_total_slots} left
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-col border-l border-gray-100 pl-2">
+                                                <span className="text-[10px] text-gray-400 font-bold mb-0.5 flex items-center"><Bike size={10} className="mr-1" /> Bike</span>
+                                                <span className="text-xs font-bold text-gray-900">₹{location.bike_price_per_hour}/hr</span>
+                                                <span className={`${location.bike_available_slots > 0 ? 'text-green-600' : 'text-red-500'} text-[9px] font-bold`}>
+                                                    {location.bike_available_slots} / {location.bike_total_slots} left
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex justify-between items-center text-xs text-gray-700 mb-2 mt-2">
+                                            <span className="bg-blue-50 px-1.5 py-0.5 rounded text-blue-700 font-bold text-[10px]">
+                                                ₹{location.price_per_hour}/hr
+                                            </span>
+                                            <span className={`${location.available_slots > 0 ? 'text-green-600' : 'text-red-500'} font-bold text-[10px]`}>
+                                                {location.available_slots} / {location.total_slots} slots
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="w-full btn-primary text-center mt-auto py-1.5 text-xs rounded-md">
+                                    View
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+                </>
             )}
         </div>
     );

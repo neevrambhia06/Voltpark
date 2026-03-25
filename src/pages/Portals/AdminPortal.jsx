@@ -4,6 +4,7 @@ import { Users, MapPin, Calendar, Shield, ArrowRight, Eye, Briefcase, Building2,
 import { format } from 'date-fns';
 
 import { useNavigate } from 'react-router-dom';
+import { geocodeAddress } from '../../utils/geoapify';
 
 const AdminPortal = () => {
     const navigate = useNavigate();
@@ -25,8 +26,11 @@ const AdminPortal = () => {
     const [isAddPropertyModalOpen, setIsAddPropertyModalOpen] = useState(false);
     const [isAddOwnerModalOpen, setIsAddOwnerModalOpen] = useState(false);
     const [propertyForm, setPropertyForm] = useState({
-        name: '', address: '', city: '', type: 'parking', price: '', slots: '', owner_id: ''
+        name: '', address: '', city: '', area: '', type: 'parking', price: '', slots: '', owner_id: '',
+        latitude: null, longitude: null
     });
+    const [geocodingAddress, setGeocodingAddress] = useState(false);
+    const [geocodingStatus, setGeocodingStatus] = useState(null); // 'loading', 'success', 'error'
     const [promoteEmail, setPromoteEmail] = useState('');
     const [promoteLoading, setPromoteLoading] = useState(false);
 
@@ -292,6 +296,34 @@ const AdminPortal = () => {
 
 
     // Quick Action Handlers
+    const handleAddressBlur = async () => {
+        if (!propertyForm.address || !propertyForm.city) return;
+        
+        setGeocodingAddress(true);
+        setGeocodingStatus('loading');
+        
+        try {
+            const fullAddress = `${propertyForm.address}, ${propertyForm.area || ''}, ${propertyForm.city}, India`;
+            const result = await geocodeAddress(fullAddress);
+            if (result) {
+                setPropertyForm(prev => ({ 
+                    ...prev, 
+                    latitude: result.lat, 
+                    longitude: result.lng 
+                }));
+                setGeocodingStatus('success');
+            } else {
+                setGeocodingStatus('error');
+            }
+        } catch (err) {
+            console.error("Geocoding error:", err);
+            setGeocodingStatus('error');
+        } finally {
+            setGeocodingAddress(false);
+            setTimeout(() => setGeocodingStatus(null), 3000);
+        }
+    };
+
     const handleAddProperty = async (e) => {
         e.preventDefault();
         try {
@@ -299,11 +331,14 @@ const AdminPortal = () => {
                 owner_id: propertyForm.owner_id,
                 name: propertyForm.name,
                 address: propertyForm.address,
+                area: propertyForm.area,
                 city: propertyForm.city,
                 type: propertyForm.type,
-                price_per_hour: parseFloat(propertyForm.price),
-                total_slots: parseInt(propertyForm.slots),
-                available_slots: parseInt(propertyForm.slots)
+                price_per_hour: parseFloat(propertyForm.price || 0),
+                total_slots: parseInt(propertyForm.slots || 0),
+                available_slots: parseInt(propertyForm.slots || 0),
+                latitude: propertyForm.latitude,
+                longitude: propertyForm.longitude
             }]);
 
             if (error) throw error;
@@ -816,14 +851,47 @@ const AdminPortal = () => {
                             <div>
                                 <label className="block text-gray-700 font-bold mb-1 text-sm">Address</label>
                                 <input type="text" required className="w-full p-2 border rounded-lg"
-                                    value={propertyForm.address} onChange={e => setPropertyForm({ ...propertyForm, address: e.target.value })} />
+                                    value={propertyForm.address} 
+                                    onChange={e => setPropertyForm({ ...propertyForm, address: e.target.value })} 
+                                    onBlur={handleAddressBlur}
+                                    placeholder="Street, Building, Landmark"
+                                />
                             </div>
-                            <div className="grid grid-cols-3 gap-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-gray-700 font-bold mb-1 text-sm">Area / Locality</label>
+                                    <input type="text" className="w-full p-2 border rounded-lg"
+                                        value={propertyForm.area || ''} 
+                                        onChange={e => setPropertyForm({ ...propertyForm, area: e.target.value })} 
+                                        onBlur={handleAddressBlur}
+                                        placeholder="e.g. Bandra West"
+                                    />
+                                </div>
                                 <div>
                                     <label className="block text-gray-700 font-bold mb-1 text-sm">City</label>
                                     <input type="text" required className="w-full p-2 border rounded-lg"
-                                        value={propertyForm.city} onChange={e => setPropertyForm({ ...propertyForm, city: e.target.value })} />
+                                        value={propertyForm.city} 
+                                        onChange={e => setPropertyForm({ ...propertyForm, city: e.target.value })} 
+                                        onBlur={handleAddressBlur}
+                                        placeholder="City"
+                                    />
                                 </div>
+                            </div>
+
+                            {/* Geocoding Status */}
+                            {geocodingStatus && (
+                                <div className={`text-[10px] font-bold px-2 py-1 rounded-md w-fit ${
+                                    geocodingStatus === 'loading' ? 'bg-blue-50 text-blue-600 animate-pulse' :
+                                    geocodingStatus === 'success' ? 'bg-green-50 text-green-600' :
+                                    'bg-red-50 text-red-600'
+                                }`}>
+                                    {geocodingStatus === 'loading' && '📍 Finding coordinates...'}
+                                    {geocodingStatus === 'success' && '✅ Found location'}
+                                    {geocodingStatus === 'error' && '❌ Location not found'}
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-gray-700 font-bold mb-1 text-sm">Price/Hr (₹)</label>
                                     <input type="number" required className="w-full p-2 border rounded-lg"
