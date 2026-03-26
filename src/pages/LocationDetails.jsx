@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { MapPin, Zap, Clock, Calendar, CreditCard, Car, Bike, Navigation } from 'lucide-react';
+import { MapPin, Zap, Clock, Calendar, CreditCard, Car, Bike, Navigation, Phone, User, X } from 'lucide-react';
 import { format, addHours } from 'date-fns';
 import { SEED_LOCATIONS } from '../lib/seedData';
 import DateTimeWheel from '../components/DateTimeWheel';
@@ -25,6 +25,8 @@ const LocationDetails = () => {
     const [selectedSlot, setSelectedSlot] = useState(null);
     const [occupiedSlots, setOccupiedSlots] = useState([]);
     const [selectedVehicle, setSelectedVehicle] = useState('car'); // 'car' or 'bike'
+    const [ownerProfile, setOwnerProfile] = useState(null);
+    const [showContactModal, setShowContactModal] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -138,6 +140,15 @@ const LocationDetails = () => {
                     .single();
                 if (error) throw error;
                 setLocation(data);
+
+                if (data.owner_id) {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('full_name, mobile')
+                        .eq('id', data.owner_id)
+                        .single();
+                    if (profile) setOwnerProfile(profile);
+                }
             }
         } catch (error) {
             console.error('Error fetching location:', error);
@@ -356,6 +367,13 @@ const LocationDetails = () => {
                                 <Navigation size={12} className="text-primary" />
                                 Directions
                             </a>
+                            <button
+                                onClick={() => setShowContactModal(true)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-gray-200 shadow-[0_2px_4px_rgba(0,0,0,0.05)] rounded-full text-xs font-bold text-slate-700 hover:bg-gray-50 hover:text-primary transition-all hover:shadow-md"
+                            >
+                                <Phone size={12} className="text-primary" />
+                                Contact
+                            </button>
                         </div>
 
                         <p className="flex items-center text-gray-600 mb-4 text-sm">
@@ -554,6 +572,66 @@ const LocationDetails = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Contact Modal */}
+            {showContactModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl transform transition-all animate-scale-in">
+                        <div className="bg-primary/5 p-6 border-b border-gray-100 flex justify-between items-center">
+                            <h3 className="text-lg font-bold text-gray-900">Contact Owner</h3>
+                            <button 
+                                onClick={() => setShowContactModal(false)}
+                                className="p-1 hover:bg-gray-200 rounded-full transition-colors"
+                            >
+                                <X size={20} className="text-gray-500" />
+                            </button>
+                        </div>
+                        
+                        <div className="p-8 flex flex-col items-center text-center">
+                            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                                <User size={32} className="text-primary" />
+                            </div>
+                            
+                            <h4 className="text-xl font-bold text-gray-900 mb-1">
+                                {ownerProfile?.full_name || 'Owner'}
+                            </h4>
+                            <p className="text-gray-500 text-sm mb-6">Property Partner</p>
+                            
+                            {ownerProfile?.mobile ? (
+                                <a 
+                                    href={`tel:${ownerProfile.mobile}`}
+                                    className="w-full py-4 bg-primary text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-all shadow-lg active:scale-95"
+                                >
+                                    <Phone size={18} />
+                                    {ownerProfile.mobile}
+                                </a>
+                            ) : (
+                                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-sm">
+                                    Mobile number not available for this owner.
+                                </div>
+                            )}
+                            
+                            <p className="mt-4 text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                                VoltPark Secure Communication
+                            </p>
+                        </div>
+                        
+                        <button 
+                            onClick={() => setShowContactModal(false)}
+                            className="w-full py-3 bg-gray-50 text-gray-500 text-xs font-bold border-t border-gray-100 uppercase tracking-wide hover:bg-gray-100 transition-colors"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes scale-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+                .animate-fade-in { animation: fade-in 0.2s ease-out; }
+                .animate-scale-in { animation: scale-in 0.2s ease-out; }
+            `}} />
         </div>
     );
 };

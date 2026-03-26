@@ -86,7 +86,7 @@ const Locations = ({ type }) => {
     const fetchLocations = async () => {
         // setLoading(true); // Don't set loading on refresh, only initial
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // Relaxed to 30s
 
         try {
             console.log("VOLTPARK: Fetching locations...");

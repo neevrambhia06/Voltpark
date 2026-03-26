@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Users, MapPin, Calendar, Shield, ArrowRight, Eye, Briefcase, Building2, X, Trash2, UserMinus, ShieldCheck, Car, Bike } from 'lucide-react';
 import { format } from 'date-fns';
@@ -15,6 +15,7 @@ const AdminPortal = () => {
     const [recentBookings, setRecentBookings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [errorMsg, setErrorMsg] = useState(null);
+    const lastFetchRef = useRef(0);
 
     // Modal State
     const [selectedOwner, setSelectedOwner] = useState(null);
@@ -91,19 +92,43 @@ const AdminPortal = () => {
                 .order('created_at', { ascending: false });
             if (err7) throw err7;
 
-            // Enrich with counts 
-            const enrichedOwners = await Promise.all((ownersData || []).map(async (owner) => {
-                const { count: propsCount } = await supabase.from('locations').select('id', { count: 'exact', head: true }).eq('owner_id', owner.id);
+            // 3. Bulk Fetch Optimizations (Avoid N+1)
+            const ownerIds = (ownersData || []).map(o => o.id);
+            
+            // Bulk fetch all locations for these owners
+            const { data: allOwnerLocations } = await supabase
+                .from('locations')
+                .select('id, owner_id')
+                .in('owner_id', ownerIds);
 
-                const { data: ownerLocs } = await supabase.from('locations').select('id').eq('owner_id', owner.id);
-                const locIds = (ownerLocs || []).map(l => l.id);
-                let bCount = 0;
-                if (locIds.length > 0) {
-                    const { count } = await supabase.from('bookings').select('id', { count: 'exact', head: true }).in('location_id', locIds);
-                    bCount = count || 0;
-                }
-                return { ...owner, propertiesCount: propsCount || 0, bookingsCount: bCount };
-            }));
+            const ownerLocationIdsMap = {};
+            (allOwnerLocations || []).forEach(loc => {
+                if (!ownerLocationIdsMap[loc.owner_id]) ownerLocationIdsMap[loc.owner_id] = [];
+                ownerLocationIdsMap[loc.owner_id].push(loc.id);
+            });
+
+            // Bulk fetch bookings for all these locations
+            const allLocIds = (allOwnerLocations || []).map(l => l.id);
+            let allRelevantBookings = [];
+            if (allLocIds.length > 0) {
+                // We use head: false to actually get the data IDs for mapping
+                const { data: bks } = await supabase
+                    .from('bookings')
+                    .select('id, location_id')
+                    .in('location_id', allLocIds);
+                allRelevantBookings = bks || [];
+            }
+
+            const enrichedOwners = (ownersData || []).map(owner => {
+                const myLocs = ownerLocationIdsMap[owner.id] || [];
+                // Count bookings targeting locations owned by this owner
+                const myBookingsCount = allRelevantBookings.filter(b => myLocs.includes(b.location_id)).length;
+                return {
+                    ...owner,
+                    propertiesCount: myLocs.length,
+                    bookingsCount: myBookingsCount
+                };
+            });
 
             setStats({
                 totalOwners: ownerCount || 0,
@@ -129,9 +154,27 @@ const AdminPortal = () => {
         // Subscribe to changes in users (owners), locations, and bookings to keep stats fresh
         const channel = supabase
             .channel('admin-dashboard-changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_profiles' }, () => fetchAdminData(false))
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, () => fetchAdminData(false))
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => fetchAdminData(false))
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_profiles' }, () => {
+                const now = Date.now();
+                if (now - lastFetchRef.current > 2000) {
+                    lastFetchRef.current = now;
+                    fetchAdminData(false);
+                }
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, () => {
+                const now = Date.now();
+                if (now - lastFetchRef.current > 2000) {
+                    lastFetchRef.current = now;
+                    fetchAdminData(false);
+                }
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
+                const now = Date.now();
+                if (now - lastFetchRef.current > 2000) {
+                    lastFetchRef.current = now;
+                    fetchAdminData(false);
+                }
+            })
             .subscribe();
 
         // Fallback polling
@@ -771,9 +814,16 @@ const AdminPortal = () => {
                                             <td className="px-4 py-2">
                                                 <div className="flex space-x-2">
                                                     <button
+                                                        onClick={() => navigate(`/admin/owner/${u.id}`)}
+                                                        className="text-teal-600 hover:text-teal-800 font-bold bg-teal-50 hover:bg-teal-100 p-1.5 rounded-md transition-colors border border-teal-200 text-xs"
+                                                        title="View Detailed Profile"
+                                                    >
+                                                        <Eye size={12} />
+                                                    </button>
+                                                    <button
                                                         onClick={() => handleViewDetails(u, 'properties')}
                                                         className="text-blue-600 hover:text-blue-800 font-bold bg-blue-50 hover:bg-blue-100 p-1.5 rounded-md transition-colors border border-blue-200 text-xs"
-                                                        title="View Properties"
+                                                        title="View Quick Properties"
                                                     >
                                                         <Building2 size={12} />
                                                     </button>

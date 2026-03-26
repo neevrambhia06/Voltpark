@@ -29,7 +29,7 @@ const LiquidNavbar = () => {
     };
 
     return (
-        <nav className="bg-white sticky top-0 z-50 py-4 px-6 md:px-12">
+        <nav className="bg-white sticky top-0 z-[1001] py-4 px-6 md:px-12">
             <div className="max-w-7xl mx-auto flex justify-between items-center relative">
 
                 {/* Logo */}
@@ -81,13 +81,16 @@ const LiquidNavbar = () => {
                                 </button>
 
                                 {/* Dropdown */}
-                                <div className="absolute right-0 mt-3 w-56 bg-white rounded-2xl shadow-xl py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top-right border border-gray-100 overflow-hidden">
+                                <div className="absolute right-0 mt-3 z-[1002] w-56 bg-white rounded-2xl shadow-xl py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top-right border border-gray-100 overflow-hidden">
                                     <div className="px-5 py-3 bg-gray-50/50 border-b border-gray-100">
                                         <p className="text-xs text-gray-400 font-medium">Signed in as</p>
                                         <p className="text-sm font-bold text-gray-800 truncate">{user.email}</p>
                                     </div>
                                     <div className="p-2">
-                                        <Link to="/profile" className="flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-primary hover:bg-blue-50 rounded-xl transition-colors">
+                                        <Link 
+                                            to={userRole === 'owner' ? "/owner/profile" : "/profile"} 
+                                            className="flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-primary hover:bg-blue-50 rounded-xl transition-colors"
+                                        >
                                             <User size={16} className="mr-3" /> Profile
                                         </Link>
                                         <Link to={getDashboardLink()} className="flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-primary hover:bg-blue-50 rounded-xl transition-colors">

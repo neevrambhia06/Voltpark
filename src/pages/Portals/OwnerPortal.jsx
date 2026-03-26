@@ -1,8 +1,9 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabaseClient';
-import { Plus, Edit, Trash2, MapPin, Calendar, DollarSign, BarChart3, Clock, CheckCircle, X, Shield, Filter, Search, ChevronDown, ChevronUp, LogOut, QrCode, Car, Bike, PlusCircle, Building2 } from 'lucide-react';
+import { Plus, Edit, Trash2, MapPin, Calendar, DollarSign, BarChart3, Clock, CheckCircle, X, Shield, Filter, Search, ChevronDown, ChevronUp, LogOut, QrCode, Car, Bike, PlusCircle, Building2, User } from 'lucide-react';
 import { format } from 'date-fns';
 import BarcodeModal from '../../components/BarcodeModal';
 import { uploadLocationImage } from '../../utils/uploadImage';
@@ -14,6 +15,7 @@ const OwnerPortal = () => {
     const [bookings, setBookings] = useState([]);
     const [stats, setStats] = useState({ revenue: 0, occupancy: 0, rating: 0 });
     const [loading, setLoading] = useState(true);
+    const lastFetchRef = useRef(0)
 
     // UI State
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -66,7 +68,7 @@ const OwnerPortal = () => {
         const timeoutId = setTimeout(() => {
             controller.abort();
             setLoading(false);
-        }, 6000);
+        }, 30000); // Relaxed to 30s
 
         try {
             setLoading(true);
@@ -121,7 +123,11 @@ const OwnerPortal = () => {
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'locations', filter: `owner_id = eq.${user.id} ` },
                 () => {
-                    fetchOwnerData();
+                    const now = Date.now()
+                    if (now - lastFetchRef.current > 2000) {
+                        lastFetchRef.current = now
+                        fetchOwnerData();
+                    }
                 }
             )
             .subscribe();
@@ -141,7 +147,11 @@ const OwnerPortal = () => {
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'bookings' },
                 () => {
-                    fetchOwnerData();
+                    const now = Date.now()
+                    if (now - lastFetchRef.current > 2000) {
+                        lastFetchRef.current = now
+                        fetchOwnerData();
+                    }
                 }
             )
             .subscribe();
@@ -566,7 +576,14 @@ const OwnerPortal = () => {
                 <div className="presentation-container flex justify-between items-center">
                     <div>
                         <h1 className="text-2xl font-extrabold mb-1 tracking-tight">Owner Portal</h1>
-                        <p className="text-xs opacity-90 font-light">Manage your properties and bookings</p>
+                        <p className="text-xs opacity-90 font-light mb-3">Manage your properties and bookings</p>
+                        <Link 
+                            to="/owner/profile" 
+                            className="bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10 transition-all flex items-center gap-2 w-fit group"
+                        >
+                            <User size={14} className="group-hover:text-secondary transition-colors" />
+                            <span className="text-xs font-bold">My Owner Profile</span>
+                        </Link>
                     </div>
                     <div className="flex space-x-6 text-center bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/10">
                         <div>

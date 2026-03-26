@@ -42,7 +42,7 @@ const AdminLogin = () => {
                     .maybeSingle();
 
                 const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error("Role verification timed out")), 5000)
+                    setTimeout(() => reject(new Error("Role verification timed out")), 30000)
                 );
 
                 const { data: userData, error: roleError } = await Promise.race([rolePromise, timeoutPromise]);

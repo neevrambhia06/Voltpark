@@ -71,9 +71,15 @@ const Navbar = () => {
                                         <p className="text-[10px] font-bold text-secondary uppercase mt-0.5">{userRole}</p>
                                     </div>
 
-                                    <Link to="/profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors flex items-center">
-                                        <User size={16} className="mr-2" /> My Profile
-                                    </Link>
+                                    {userRole === 'owner' ? (
+                                        <Link to="/owner/profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors flex items-center">
+                                            <User size={16} className="mr-2" /> My Profile
+                                        </Link>
+                                    ) : (
+                                        <Link to="/profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors flex items-center">
+                                            <User size={16} className="mr-2" /> My Profile
+                                        </Link>
+                                    )}
 
                                     <Link to={getDashboardLink()} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors flex items-center">
                                         <Menu size={16} className="mr-2" /> My Dashboard

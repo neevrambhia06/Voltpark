@@ -16,9 +16,12 @@ import AdminPortal from './pages/Portals/AdminPortal';
 import AdminBookings from './pages/Admin/AdminBookings';
 import AdminProperties from './pages/Admin/AdminProperties';
 import CreateAdmin from './pages/Admin/CreateAdmin';
-import Profile from './pages/Profile';
 import About from './pages/About';
 import Contact from './pages/Contact';
+import OwnerDetails from './pages/OwnerDetails';
+import AdminOwnerProfile from './pages/AdminOwnerProfile';
+
+
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, userRole, loading } = useAuth();
@@ -131,10 +134,28 @@ function App() {
           path="/profile"
           element={
             <ProtectedRoute allowedRoles={['user', 'owner', 'admin']}>
-              <Profile />
+              <Navigate to="/owner/profile" replace />
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/owner/profile"
+          element={
+            <ProtectedRoute allowedRoles={['owner', 'admin']}>
+              <OwnerDetails />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/owner/:ownerId"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <AdminOwnerProfile />
+            </ProtectedRoute>
+          }
+        />
+
+
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -112,7 +112,7 @@ export const AuthProvider = ({ children }) => {
     const fetchGetUserProfile = async (userId) => {
         // Tighter internal timeout for profile fetching, but relaxed to 15s for stability on slow networks
         const profileTimeout = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Profile fetch timeout")), 15000)
+            setTimeout(() => reject(new Error("Profile fetch timeout")), 45000)
         );
 
         try {
