@@ -99,23 +99,6 @@ const LocationDetails = () => {
         }
     };
 
-    // ... fetchLocation ...
-
-    // ... handleBooking ...
-
-    // ...
-
-
-
-    // ... (fetchLocation remains same, omitted for brevity if using tool correctly with context, but I cant skip lines in replace_file_content unless I use chunks.
-    // Wait, I need to keep fetchLocation. I'll use separate replace calls or just be careful. 
-    // Actually, I can use the tool to replace 'imports' and 'state init' and 'handleBooking' separately if I want to be safe.
-    // Or I can just replace the top part and the handleBooking part.
-    // The previous tool call handled the FORM render.
-    // This one will handle imports and the top logic.
-
-    // ... imports are already there at the top. I need to ADD DatePicker imports.
-
     const fetchLocation = async () => {
         try {
             const seedLocation = SEED_LOCATIONS.find(l => l.id === id);
@@ -143,10 +126,10 @@ const LocationDetails = () => {
 
                 if (data.owner_id) {
                     const { data: profile } = await supabase
-                        .from('profiles')
+                        .from('owner_profiles')
                         .select('full_name, mobile')
                         .eq('id', data.owner_id)
-                        .single();
+                        .maybeSingle();
                     if (profile) setOwnerProfile(profile);
                 }
             }
@@ -171,96 +154,27 @@ const LocationDetails = () => {
             return;
         }
 
-        setProcessing(true);
-        try {
-            const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:5000';
-            const startDateTime = booking.startDateTime;
-            const endDateTime = addHours(startDateTime, booking.duration);
+        const startDateTime = booking.startDateTime;
+        const endDateTime = addHours(startDateTime, booking.duration);
 
-            const pricePerHour = location.type === 'parking'
-                ? (selectedVehicle === 'car' ? location.car_price_per_hour : location.bike_price_per_hour)
-                : location.price_per_hour;
+        const pricePerHour = location.type === 'parking'
+            ? (selectedVehicle === 'car' ? location.car_price_per_hour : location.bike_price_per_hour)
+            : location.price_per_hour;
 
-            const amount = pricePerHour * booking.duration;
-            const tempBookingId = crypto.randomUUID();
-
-            // 1. Create Order on Backend
-            const orderResponse = await fetch(`${API_BASE}/api/create-order`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ booking_id: tempBookingId, amount: amount })
-            });
-
-            if (!orderResponse.ok) {
-                const errorData = await orderResponse.json();
-                throw new Error(errorData.error || 'Failed to create Razorpay order');
+        // Navigate to Price Breakdown page instead of calling Razorpay directly
+        navigate('/booking/summary', {
+            state: {
+                location:      location,
+                slot:          selectedSlot,
+                startTime:     startDateTime.toISOString(),
+                endTime:       endDateTime.toISOString(),
+                durationHours: booking.duration,
+                vehicleType:   selectedVehicle,
+                pricePerHour:  pricePerHour,
             }
-
-            const order = await orderResponse.json();
-
-            // 2. Initialize Razorpay Checkout
-            const options = {
-                key: order.key_id,
-                amount: order.amount,
-                currency: order.currency,
-                name: "VOLTpark",
-                description: `Booking at ${location.name}`,
-                order_id: order.id,
-                handler: async function (response) {
-                    try {
-                        setProcessing(true);
-
-                        // 3. Verify Payment
-                        const verifyRes = await fetch(`${API_BASE}/api/verify-payment`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                razorpay_order_id: response.razorpay_order_id,
-                                razorpay_payment_id: response.razorpay_payment_id,
-                                razorpay_signature: response.razorpay_signature
-                            })
-                        });
-
-                        const verifyData = await verifyRes.json();
-
-                        if (verifyData.status === 'success') {
-                            // 4. Save Booking to DB
-                            await confirmBooking(amount, startDateTime, endDateTime, tempBookingId, response.razorpay_order_id, response.razorpay_payment_id);
-                        } else {
-                            alert('Payment verification failed.');
-                            setProcessing(false);
-                        }
-                    } catch (verifyError) {
-                        console.error('Verification error:', verifyError);
-                        alert('An error occurred while verifying the payment.');
-                        setProcessing(false);
-                    }
-                },
-                prefill: {
-                    name: user.user_metadata?.name || user.email,
-                    email: user.email,
-                },
-                theme: {
-                    color: "#3399cc"
-                }
-            };
-
-            const rzp = new window.Razorpay(options);
-
-            rzp.on('payment.failed', function (response) {
-                console.error('Payment Failed:', response.error);
-                alert(`Payment Failed: ${response.error.description}`);
-                setProcessing(false);
-            });
-
-            rzp.open();
-
-        } catch (error) {
-            console.error('Booking initiation failed:', error);
-            alert('Booking initiation failed: ' + (error.message || "Unknown error"));
-            setProcessing(false); // Only set if we didn't open the modal
-        }
+        });
     };
+
 
     const confirmBooking = async (amount, startDateTime, endDateTime, tempBookingId, razorpayOrderId, razorpayPaymentId) => {
         try {

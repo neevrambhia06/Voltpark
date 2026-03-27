@@ -5,9 +5,8 @@ import { uploadAvatar } from '../utils/uploadAvatar'
 import { useAuth } from '../context/AuthContext'
 import { motion } from 'framer-motion'
 import {
-  Mail, Lock, Shield, User, Briefcase, MapPin,
-  Camera, Edit3, Save, X, ChevronRight, Building2,
-  Calendar, DollarSign, Bookmark, Layers
+  Mail, Lock, Shield, User, MapPin, Calendar,
+  Camera, Edit3, Save, X, ChevronRight, Bookmark
 } from 'lucide-react'
 
 /* ================================================================
@@ -25,7 +24,6 @@ const T = {
   accentDim: 'rgba(20,184,166,0.10)',
   danger:    '#ef4444',
   success:   '#16a34a',
-  amber:     '#f59e0b',
   inputBg:   '#ffffff',
   inputBdr:  '#e2e8f0',
   inputFocus:'rgba(20,184,166,0.30)',
@@ -92,8 +90,10 @@ const fadeUp = {
 /* ================================================================
    COMPONENT
    ================================================================ */
-export default function OwnerDetails() {
-  const navigate   = useNavigate()
+export default function UserProfile() {
+  const navigate = useNavigate()
+  const { logout } = useAuth?.() || { logout: () => {} }
+
   const [profile, setProfile]       = useState(null)
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
@@ -103,39 +103,30 @@ export default function OwnerDetails() {
   const [avatarFile, setAvatarFile] = useState(null)
   const [avatarPreview, setAvatarPreview] = useState(null)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
-  const [stats, setStats] = useState({
-    totalProperties: 0,
-    totalBookings: 0,
-    totalRevenue: 0,
-    activeSlots: 0,
-  })
 
-  // Auth/Account states
-  const { logout } = useAuth && typeof useAuth === 'function' ? useAuth() : { logout: () => {} }
+  const [stats, setStats] = useState({ totalBookings: 0, totalSpent: 0 })
+
+  // Auth / Account states
   const [emailForm, setEmailForm] = useState({ email: '', confirmEmail: '' })
   const [passwordForm, setPasswordForm] = useState({ password: '', confirmPassword: '' })
   const [authMessage, setAuthMessage] = useState({ type: '', text: '' })
 
   const [form, setForm] = useState({
-    full_name:     '',
-    mobile:        '',
-    business_name: '',
-    business_type: '',
-    city:          '',
-    state:         '',
-    pincode:       '',
-    gst_number:    '',
-    bio:           '',
+    full_name: '',
+    mobile: '',
+    city: '',
+    state: '',
+    pincode: '',
   })
 
-  /* ── Fetch owner profile ── */
+  /* ── Fetch profile ── */
   useEffect(() => { fetchProfile() }, [])
 
   const fetchProfile = async () => {
     setLoading(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { navigate('/owner/login'); return }
+      if (!session) { navigate('/login'); return }
 
       const { data, error } = await supabase
         .from('profiles')
@@ -149,23 +140,19 @@ export default function OwnerDetails() {
         setProfile(data)
         setAvatarPreview(data.avatar_url || null)
         setForm({
-          full_name:     data.full_name     || '',
-          mobile:        data.mobile        || '',
-          business_name: data.business_name || '',
-          business_type: data.business_type || '',
-          city:          data.city          || '',
-          state:         data.state         || '',
-          pincode:       data.pincode       || '',
-          gst_number:    data.gst_number    || '',
-          bio:           data.bio           || '',
+          full_name: data.full_name || '',
+          mobile:    data.mobile    || '',
+          city:      data.city      || '',
+          state:     data.state     || '',
+          pincode:   data.pincode   || '',
         })
       } else {
         setForm(prev => ({
           ...prev,
           full_name: session.user.user_metadata?.full_name ||
                      session.user.user_metadata?.name || '',
-          email: session.user.email
         }))
+        setProfile({ email: session.user.email, id: session.user.id })
       }
 
       await fetchStats(session.user.id)
@@ -177,42 +164,17 @@ export default function OwnerDetails() {
     }
   }
 
-  const fetchStats = async (ownerId) => {
+  const fetchStats = async (userId) => {
     try {
-      const { count: propCount } = await supabase
-        .from('locations')
-        .select('*', { count: 'exact', head: true })
-        .eq('owner_id', ownerId)
+      const { data: bookings } = await supabase
+        .from('bookings')
+        .select('amount, status')
+        .eq('user_id', userId)
 
-      const { data: locations } = await supabase
-        .from('locations')
-        .select('id, car_available_slots, bike_available_slots, available_slots')
-        .eq('owner_id', ownerId)
-
-      const locationIds = locations?.map(l => l.id) || []
-      let totalBookings = 0
-      let totalRevenue  = 0
-
-      if (locationIds.length > 0) {
-        const { data: bookings } = await supabase
-          .from('bookings')
-          .select('amount, status')
-          .in('location_id', locationIds)
-
-        totalBookings = bookings?.length || 0
-        totalRevenue  = bookings?.reduce((sum, b) => sum + (b.amount || 0), 0) || 0
-      }
-
-      const activeSlots = locations?.reduce(
-        (sum, l) =>
-          sum +
-          (l.car_available_slots  || 0) +
-          (l.bike_available_slots || 0) +
-          (l.available_slots      || 0),
-        0
-      ) || 0
-
-      setStats({ totalProperties: propCount || 0, totalBookings, totalRevenue, activeSlots })
+      setStats({
+        totalBookings: bookings?.length || 0,
+        totalSpent: bookings?.reduce((sum, b) => sum + (b.amount || 0), 0) || 0,
+      })
     } catch (err) {
       console.error('Stats error:', err)
     }
@@ -289,7 +251,7 @@ export default function OwnerDetails() {
         .upsert({
           id: session.user.id,
           email: session.user.email,
-          role: 'owner',
+          role: profile?.role || 'user',
           joined_at: profile?.joined_at || new Date().toISOString(),
           ...form,
           avatar_url: avatarUrl,
@@ -341,7 +303,7 @@ export default function OwnerDetails() {
         initial="hidden"
         animate="visible"
         style={{
-          maxWidth: '900px', margin: '0 auto',
+          maxWidth: '860px', margin: '0 auto',
           padding: '40px 24px 80px',
         }}
       >
@@ -359,10 +321,10 @@ export default function OwnerDetails() {
               fontFamily: "'Ferron', sans-serif",
               letterSpacing: '-0.02em',
             }}>
-              Owner Profile
+              My Profile
             </h1>
             <p style={{ fontSize: '14px', color: T.textMuted, margin: '6px 0 0' }}>
-              Manage your personal and business details
+              Manage your personal details and account settings
             </p>
           </div>
           <button
@@ -413,44 +375,44 @@ export default function OwnerDetails() {
                 {/* Avatar */}
                 <div style={{ position: 'relative' }}>
                   <div style={{
-                    width: '96px', height: '96px', borderRadius: '50%',
+                    width: '88px', height: '88px', borderRadius: '50%',
                     overflow: 'hidden', border: `3px solid ${T.accent}`,
                     background: T.surface,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '34px', fontWeight: 800, color: T.accent,
+                    fontSize: '30px', fontWeight: 800, color: T.accent,
                     fontFamily: "'Ferron', sans-serif",
-                    boxShadow: `0 0 28px rgba(20,184,166,0.18)`,
+                    boxShadow: `0 0 24px rgba(20,184,166,0.15)`,
                   }}>
                     {avatarPreview ? (
                       <img src={avatarPreview} alt="Avatar" style={{
                         width: '100%', height: '100%', objectFit: 'cover',
                       }} />
                     ) : (
-                      (form.full_name?.[0] || profile?.email?.[0] || 'O').toUpperCase()
+                      (form.full_name?.[0] || profile?.email?.[0] || 'U').toUpperCase()
                     )}
                   </div>
                   {editing && (
                     <button type="button"
-                      onClick={() => document.getElementById('avatar-input').click()}
+                      onClick={() => document.getElementById('user-avatar-input').click()}
                       style={{
                         position: 'absolute', bottom: -2, right: -2,
                         width: '30px', height: '30px', borderRadius: '50%',
                         background: T.accent, border: `2px solid ${T.bg}`,
-                        color: '#fff', cursor: 'pointer',
+                        color: '#fff', fontSize: '14px', cursor: 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}
                     >
                       <Camera size={13} />
                     </button>
                   )}
-                  <input id="avatar-input" type="file"
+                  <input id="user-avatar-input" type="file"
                     accept="image/jpeg,image/png,image/webp"
                     onChange={handleAvatarChange} style={{ display: 'none' }}
                   />
                 </div>
 
-                {/* Name + badges */}
-                <div style={{ flex: 1, minWidth: '200px' }}>
+                {/* Name + role badge */}
+                <div style={{ flex: 1, minWidth: '180px' }}>
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: '10px',
                     flexWrap: 'wrap',
@@ -459,25 +421,15 @@ export default function OwnerDetails() {
                       fontSize: '22px', fontWeight: 800, color: T.text,
                       margin: 0, fontFamily: "'Ferron', sans-serif",
                     }}>
-                      {profile?.full_name || 'Owner'}
+                      {profile?.full_name || form.full_name || 'User'}
                     </h2>
-                    {profile?.is_verified && (
-                      <span style={{
-                        fontSize: '10px', fontWeight: 700, padding: '3px 12px',
-                        borderRadius: '9999px', background: 'rgba(34,197,94,0.12)',
-                        color: T.success, border: '1px solid rgba(34,197,94,0.25)',
-                        textTransform: 'uppercase', letterSpacing: '0.08em',
-                      }}>
-                        Verified
-                      </span>
-                    )}
                     <span style={{
                       fontSize: '10px', fontWeight: 700, padding: '3px 12px',
                       borderRadius: '9999px', background: T.accentDim,
                       color: T.accent, border: `1px solid rgba(20,184,166,0.25)`,
                       textTransform: 'uppercase', letterSpacing: '0.08em',
                     }}>
-                      Owner
+                      User
                     </span>
                   </div>
                   <p style={{ fontSize: '13px', color: T.textMuted, margin: '6px 0 0' }}>
@@ -498,31 +450,28 @@ export default function OwnerDetails() {
             {/* ── STATS ROW ── */}
             <motion.div variants={fadeUp} style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
               gap: '16px',
             }}>
               {[
-                { label: 'Properties', value: stats.totalProperties, icon: Building2, color: T.text },
                 { label: 'Total Bookings', value: stats.totalBookings, icon: Bookmark, color: T.accent },
-                { label: 'Total Revenue', value: `Rs.${stats.totalRevenue.toLocaleString('en-IN')}`, icon: DollarSign, color: T.success },
-                { label: 'Active Slots', value: stats.activeSlots, icon: Layers, color: T.amber },
+                { label: 'Total Spent', value: `Rs.${stats.totalSpent.toLocaleString('en-IN')}`, icon: Calendar, color: '#f59e0b' },
               ].map(stat => (
                 <div key={stat.label} style={{
                   ...cardStyle,
-                  padding: '20px',
-                  display: 'flex', alignItems: 'center', gap: '14px',
+                  padding: '22px 24px',
+                  display: 'flex', alignItems: 'center', gap: '16px',
                 }}>
                   <div style={{
-                    width: '42px', height: '42px', borderRadius: '14px',
+                    width: '44px', height: '44px', borderRadius: '14px',
                     background: `${stat.color}15`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    flexShrink: 0,
                   }}>
-                    <stat.icon size={18} style={{ color: stat.color }} />
+                    <stat.icon size={20} style={{ color: stat.color }} />
                   </div>
                   <div>
                     <p style={{
-                      fontSize: '20px', fontWeight: 800, color: T.text,
+                      fontSize: '22px', fontWeight: 800, color: T.text,
                       margin: 0, fontFamily: "'Ferron', sans-serif",
                     }}>
                       {stat.value}
@@ -581,85 +530,6 @@ export default function OwnerDetails() {
                     )}
                   </div>
                 ))}
-              </div>
-            </motion.div>
-
-            {/* ── BUSINESS DETAILS ── */}
-            <motion.div variants={fadeUp} style={cardStyle}>
-              <h3 style={sectionHeading}>
-                <Briefcase size={15} /> Business Details
-              </h3>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap: '16px',
-              }}>
-                {[
-                  { label: 'Business Name', name: 'business_name', type: 'text', placeholder: 'e.g. Sharma Parking Services' },
-                  { label: 'Business Type', name: 'business_type', type: 'text', placeholder: 'e.g. Parking Lot, EV Station' },
-                  { label: 'GST Number', name: 'gst_number', type: 'text', placeholder: 'e.g. 27AAAAA0000A1Z5' },
-                ].map(field => (
-                  <div key={field.name}>
-                    <label style={labelStyle}>{field.label}</label>
-                    {editing ? (
-                      <input
-                        type={field.type} name={field.name}
-                        value={form[field.name]} onChange={handleChange}
-                        placeholder={field.placeholder}
-                        style={inputStyle}
-                        onFocus={e => {
-                          e.target.style.borderColor = T.accent
-                          e.target.style.boxShadow = `0 0 0 3px ${T.inputFocus}`
-                        }}
-                        onBlur={e => {
-                          e.target.style.borderColor = T.inputBdr
-                          e.target.style.boxShadow = 'none'
-                        }}
-                      />
-                    ) : (
-                      <p style={{
-                        fontSize: '14px',
-                        color: form[field.name] ? T.text : T.textDim,
-                        margin: 0, padding: '11px 0',
-                        borderBottom: `1px solid ${T.glassBdr}`,
-                      }}>
-                        {form[field.name] || 'Not provided'}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Bio */}
-              <div style={{ marginTop: '16px' }}>
-                <label style={labelStyle}>Bio / About</label>
-                {editing ? (
-                  <textarea
-                    name="bio" value={form.bio} onChange={handleChange}
-                    placeholder="Tell users about your parking facility and services..."
-                    rows={4}
-                    style={{
-                      ...inputStyle,
-                      resize: 'vertical',
-                    }}
-                    onFocus={e => {
-                      e.target.style.borderColor = T.accent
-                      e.target.style.boxShadow = `0 0 0 3px ${T.inputFocus}`
-                    }}
-                    onBlur={e => {
-                      e.target.style.borderColor = T.inputBdr
-                      e.target.style.boxShadow = 'none'
-                    }}
-                  />
-                ) : (
-                  <p style={{
-                    fontSize: '14px',
-                    color: form.bio ? T.text : T.textDim,
-                    margin: 0, lineHeight: 1.6,
-                  }}>
-                    {form.bio || 'Not provided'}
-                  </p>
-                )}
               </div>
             </motion.div>
 
@@ -722,6 +592,7 @@ export default function OwnerDetails() {
                           padding: '10px', background: T.accent, color: '#fff',
                           border: 'none', borderRadius: '10px', fontSize: '13px',
                           fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
+                          transition: 'opacity 0.2s',
                         }}
                       >
                         Update Email
@@ -764,6 +635,7 @@ export default function OwnerDetails() {
                           padding: '10px', background: T.accent, color: '#fff',
                           border: 'none', borderRadius: '10px', fontSize: '13px',
                           fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
+                          transition: 'opacity 0.2s',
                         }}
                       >
                         Update Password
@@ -789,8 +661,7 @@ export default function OwnerDetails() {
               }}>
                 {[
                   { label: 'Email Address', value: profile?.email },
-                  { label: 'Account Role', value: 'Owner' },
-                  { label: 'Account Status', value: profile?.is_verified ? 'Verified' : 'Pending Verification' },
+                  { label: 'Account Role', value: 'User' },
                   { label: 'Member Since', value: profile?.joined_at
                     ? new Date(profile.joined_at).toLocaleDateString('en-IN', {
                         day: 'numeric', month: 'long', year: 'numeric',

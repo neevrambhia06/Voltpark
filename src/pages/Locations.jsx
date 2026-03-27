@@ -51,6 +51,15 @@ const Locations = ({ type }) => {
 
 
     useEffect(() => {
+        // Show cached locations instantly, then refresh in background
+        const cacheKey = `voltpark_locations_${type || 'all'}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+            try {
+                setLocations(JSON.parse(cached));
+                setLoading(false);
+            } catch {}
+        }
         fetchLocations();
 
         // Realtime subscription
@@ -60,7 +69,6 @@ const Locations = ({ type }) => {
                 'postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'locations' },
                 (payload) => {
-                    console.log('Location updated in realtime:', payload.new.id, payload.new.available_slots);
                     setLocations((prevLocations) =>
                         prevLocations.map((loc) =>
                             loc.id === payload.new.id ? { ...loc, ...payload.new } : loc
@@ -73,23 +81,18 @@ const Locations = ({ type }) => {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [type]); // Re-fetch when type changes
+    }, [type]);
 
-    // Fallback polling every 15 seconds
+    // Fallback polling every 30 seconds (reduced from 15s)
     useEffect(() => {
         const interval = setInterval(() => {
             fetchLocations();
-        }, 15000);
+        }, 30000);
         return () => clearInterval(interval);
     }, [type]);
 
     const fetchLocations = async () => {
-        // setLoading(true); // Don't set loading on refresh, only initial
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // Relaxed to 30s
-
         try {
-            console.log("VOLTPARK: Fetching locations...");
             let query = supabase
                 .from('locations')
                 .select(`
@@ -100,33 +103,34 @@ const Locations = ({ type }) => {
                     charging_type, charging_speed_kw,
                     image_url, owner_id,
                     car_total_slots, bike_total_slots,
-                    car_price_per_hour, bike_price_per_hour
+                    car_price_per_hour, bike_price_per_hour,
+                    is_featured, featured_until, listing_plan
                 `)
                 .eq('status', 'approved')
+                .order('is_featured', { ascending: false, nullsFirst: false })
                 .order('created_at', { ascending: false });
 
             if (type !== 'all') {
                 query = query.eq('type', type);
             }
 
-            const { data, error } = await query.abortSignal(controller.signal);
+            const { data, error } = await query;
 
             if (error) {
                 console.error('Error fetching locations:', error);
             } else if (data) {
                 setLocations(data);
+                // Cache for instant display on next visit
+                const cacheKey = `voltpark_locations_${type || 'all'}`;
+                try { sessionStorage.setItem(cacheKey, JSON.stringify(data)); } catch {}
             }
         } catch (err) {
-            if (err.name === 'AbortError') {
-                console.warn('VOLTPARK: Locations fetch timed out');
-            } else {
-                console.error('VOLTPARK: Fetch error:', err);
-            }
+            console.error('VOLTPARK: Fetch error:', err);
         } finally {
-            clearTimeout(timeoutId);
             setLoading(false);
         }
     };
+
 
     const insertSeedData = async (seeds) => {
         // Seed logic...
@@ -168,6 +172,11 @@ const Locations = ({ type }) => {
             return matchesSearch && matchesType && matchesChargingFilter && matchesParkingFilter;
         })
         .sort((a, b) => {
+            // Featured locations always appear first
+            const aFeatured = a.is_featured && (!a.featured_until || new Date(a.featured_until) > new Date()) ? 1 : 0;
+            const bFeatured = b.is_featured && (!b.featured_until || new Date(b.featured_until) > new Date()) ? 1 : 0;
+            if (bFeatured !== aFeatured) return bFeatured - aFeatured;
+
             if (type !== 'parking') return 0;
             
             if (sortBy === 'price_asc')
@@ -429,6 +438,19 @@ const Locations = ({ type }) => {
                                         alt={location.name}
                                         className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
                                     />
+                                    {/* Featured badge */}
+                                    {location.is_featured && (!location.featured_until || new Date(location.featured_until) > new Date()) && (
+                                        <div className="absolute top-1 left-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-widest shadow-lg flex items-center gap-1"
+                                            style={{
+                                                background: 'linear-gradient(135deg, #f59e0b, #f97316)',
+                                                color: '#fff',
+                                                border: '1px solid rgba(255,255,255,0.3)',
+                                                letterSpacing: '0.1em',
+                                            }}
+                                        >
+                                            FEATURED
+                                        </div>
+                                    )}
                                     <div className="absolute top-1 right-1 bg-white px-1.5 py-0.5 rounded-full text-[10px] font-bold shadow flex items-center">
                                         {location.type === 'ev' ? <Zap size={10} className="text-secondary mr-1" /> : <MapPin size={10} className="text-primary mr-1" />}
                                         <span className="uppercase text-[10px]">{location.type}</span>

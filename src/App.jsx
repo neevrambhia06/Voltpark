@@ -20,6 +20,8 @@ import About from './pages/About';
 import Contact from './pages/Contact';
 import OwnerDetails from './pages/OwnerDetails';
 import AdminOwnerProfile from './pages/AdminOwnerProfile';
+import UserProfile from './pages/UserProfile';
+import PriceBreakdown from './pages/PriceBreakdown';
 
 
 
@@ -65,6 +67,14 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   }
 
   return children;
+};
+
+const ProfileRedirect = () => {
+  const { user, userRole, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (userRole === 'owner') return <Navigate to="/owner/profile" replace />;
+  return <Navigate to="/user/profile" replace />;
 };
 
 function App() {
@@ -131,10 +141,18 @@ function App() {
           }
         />
         <Route
-          path="/profile"
+          path="/user/profile"
           element={
             <ProtectedRoute allowedRoles={['user', 'owner', 'admin']}>
-              <Navigate to="/owner/profile" replace />
+              <UserProfile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/booking/summary"
+          element={
+            <ProtectedRoute allowedRoles={['user', 'owner', 'admin']}>
+              <PriceBreakdown />
             </ProtectedRoute>
           }
         />
@@ -144,6 +162,12 @@ function App() {
             <ProtectedRoute allowedRoles={['owner', 'admin']}>
               <OwnerDetails />
             </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProfileRedirect />
           }
         />
         <Route
