@@ -114,12 +114,12 @@ const AdminProperties = () => {
             {/* Header */}
             <div className="bg-white shadow-sm border-b border-gray-200">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-3">
                             <Link to="/admin-portal" className="p-2 hover:bg-gray-100 rounded-full text-gray-500 hover:text-gray-900 transition-colors">
-                                <ArrowLeft size={24} />
+                                <ArrowLeft size={20} />
                             </Link>
-                            <h1 className="text-3xl font-bold text-gray-900">All Properties</h1>
+                            <h1 className="text-xl md:text-3xl font-bold text-gray-900">All Properties</h1>
                         </div>
                         <div className="text-sm text-gray-500 font-medium">
                             Total: {filteredLocations.length}

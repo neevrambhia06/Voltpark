@@ -276,7 +276,7 @@ const LocationDetails = () => {
                                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${location.name}, ${location.address}, ${location.city}`)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-gray-200 shadow-[0_2px_4px_rgba(0,0,0,0.05)] rounded-full text-xs font-bold text-slate-700 hover:bg-gray-50 hover:text-primary transition-all ml-auto md:ml-0 hover:shadow-md"
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-gray-200 shadow-[0_2px_4px_rgba(0,0,0,0.05)] rounded-full text-xs font-bold text-slate-700 hover:bg-gray-50 hover:text-primary transition-all hover:shadow-md"
                             >
                                 <Navigation size={12} className="text-primary" />
                                 Directions

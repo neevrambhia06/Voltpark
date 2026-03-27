@@ -13,19 +13,21 @@ const AdminDashboard = () => {
 
     const fetchData = async () => {
         try {
-            const { count: userCount, data: userData } = await supabase.from('users').select('*', { count: 'exact' });
-            const { count: locationCount } = await supabase.from('locations').select('*', { count: 'exact' });
-            const { count: bookingCount } = await supabase.from('bookings').select('*', { count: 'exact' });
-
-            const ownerCount = userData.filter(u => u.role === 'owner').length;
+            // Run all queries in parallel instead of sequentially
+            const [usersRes, locCountRes, bookCountRes, ownerCountRes] = await Promise.all([
+                supabase.from('users').select('id, email, name, role', { count: 'exact' }),
+                supabase.from('locations').select('id', { count: 'exact', head: true }),
+                supabase.from('bookings').select('id', { count: 'exact', head: true }),
+                supabase.from('users').select('id', { count: 'exact', head: true }).eq('role', 'owner')
+            ]);
 
             setStats({
-                users: userCount || 0,
-                locations: locationCount || 0,
-                bookings: bookingCount || 0,
-                owners: ownerCount
+                users: usersRes.count || 0,
+                locations: locCountRes.count || 0,
+                bookings: bookCountRes.count || 0,
+                owners: ownerCountRes.count || 0
             });
-            setUsers(userData || []);
+            setUsers(usersRes.data || []);
         } catch (error) {
             console.error(error);
         } finally {

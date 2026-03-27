@@ -124,6 +124,29 @@
   }
 }
 
+/* Mobile-specific adjustments */
+@media (max-width: 640px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .table-header {
+    @apply px-2 py-1.5 text-[9px];
+  }
+
+  .table-cell {
+    @apply px-2 py-1.5 text-[11px];
+  }
+
+  .presentation-container {
+    @apply px-3;
+  }
+
+  .leaflet-popup-content {
+    width: 180px !important;
+  }
+}
+
 /* Place-mark marker hover scale */
 .leaflet-marker-icon:hover div {
   filter: drop-shadow(0 6px 12px rgba(0,0,0,0.35)) !important;

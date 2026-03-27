@@ -7,7 +7,7 @@ import { motion } from 'framer-motion'
 import {
   Mail, Lock, Shield, User, Briefcase, MapPin,
   Camera, Edit3, Save, X, ChevronRight, Building2,
-  Calendar, DollarSign, Bookmark, Layers
+  Calendar, DollarSign, Bookmark, Layers, ArrowLeft
 } from 'lucide-react'
 
 /* ================================================================
@@ -365,20 +365,38 @@ export default function OwnerDetails() {
               Manage your personal and business details
             </p>
           </div>
-          <button
-            onClick={() => setEditing(prev => !prev)}
-            style={{
-              padding: '10px 24px', borderRadius: '12px',
-              border: editing ? `1.5px solid ${T.glassBdr}` : 'none',
-              background: editing ? 'transparent' : T.accent,
-              color: editing ? T.textMuted : '#ffffff',
-              fontWeight: 700, fontSize: '13px', cursor: 'pointer',
-              fontFamily: 'inherit', transition: 'all 0.25s',
-              display: 'flex', alignItems: 'center', gap: '8px',
-            }}
-          >
-            {editing ? <><X size={14} /> Cancel</> : <><Edit3 size={14} /> Edit Profile</>}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              onClick={() => navigate('/owner-portal')}
+              style={{
+                padding: '10px 18px', borderRadius: '12px',
+                border: `1.5px solid ${T.glassBdr}`,
+                background: 'transparent',
+                color: T.textMuted,
+                fontWeight: 700, fontSize: '13px', cursor: 'pointer',
+                fontFamily: 'inherit', transition: 'all 0.25s',
+                display: 'flex', alignItems: 'center', gap: '8px',
+              }}
+              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.02)'}
+              onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+            >
+              <ArrowLeft size={16} /> Back to Dashboard
+            </button>
+            <button
+              onClick={() => setEditing(prev => !prev)}
+              style={{
+                padding: '10px 24px', borderRadius: '12px',
+                border: editing ? `1.5px solid ${T.glassBdr}` : 'none',
+                background: editing ? 'transparent' : T.accent,
+                color: editing ? T.textMuted : '#ffffff',
+                fontWeight: 700, fontSize: '13px', cursor: 'pointer',
+                fontFamily: 'inherit', transition: 'all 0.25s',
+                display: 'flex', alignItems: 'center', gap: '8px',
+              }}
+            >
+              {editing ? <><X size={14} /> Cancel</> : <><Edit3 size={14} /> Edit Profile</>}
+            </button>
+          </div>
         </motion.div>
 
         {/* Banners */}

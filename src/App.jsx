@@ -22,6 +22,8 @@ import OwnerDetails from './pages/OwnerDetails';
 import AdminOwnerProfile from './pages/AdminOwnerProfile';
 import UserProfile from './pages/UserProfile';
 import PriceBreakdown from './pages/PriceBreakdown';
+import OwnerAnalysisPage from './pages/Portals/OwnerAnalysisPage';
+import AdminOwnerAnalysis from './pages/AdminOwnerAnalysis';
 
 
 
@@ -175,6 +177,22 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['admin']}>
               <AdminOwnerProfile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/owner/:ownerId/analysis"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <AdminOwnerAnalysis />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/owner/analysis"
+          element={
+            <ProtectedRoute allowedRoles={['owner', 'admin']}>
+              <OwnerAnalysisPage />
             </ProtectedRoute>
           }
         />

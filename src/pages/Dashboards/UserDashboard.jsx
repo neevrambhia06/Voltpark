@@ -1,15 +1,25 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
-import { MapPin, Calendar, Clock, DollarSign, QrCode } from 'lucide-react';
+import { MapPin, Calendar, Clock, DollarSign, QrCode, ArrowLeft } from 'lucide-react';
 import BarcodeModal from '../../components/BarcodeModal';
 
 const DashboardLayout = ({ title, children }) => {
+    const navigate = useNavigate();
     return (
-        <div className="max-w-7xl mx-auto px-4 py-8">
-            <h1 className="text-2xl font-extrabold text-gray-900 mb-6">{title}</h1>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden p-6">
+        <div className="max-w-7xl mx-auto px-4 py-6 sm:py-8">
+            <div className="flex items-center justify-between mb-4 md:mb-6">
+                <h1 className="text-xl md:text-2xl font-extrabold text-gray-900">{title}</h1>
+                <button 
+                  onClick={() => navigate('/')}
+                  className="flex items-center gap-2 bg-white border border-gray-200 px-4 py-2 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
+                >
+                    <ArrowLeft size={16} /> Back to Home
+                </button>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden p-3 sm:p-6">
                 {children}
             </div>
         </div>

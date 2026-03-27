@@ -68,7 +68,7 @@ const OwnerPortal = () => {
         const timeoutId = setTimeout(() => {
             controller.abort();
             setLoading(false);
-        }, 30000); // Relaxed to 30s
+        }, 15000); // Reduced from 30s to 15s
 
         try {
             setLoading(true);
@@ -137,7 +137,7 @@ const OwnerPortal = () => {
         };
     }, [user]);
 
-    // Real-time updates for Bookings
+    // Real-time updates for Bookings (no polling needed)
     useEffect(() => {
         if (!user) return;
 
@@ -156,14 +156,8 @@ const OwnerPortal = () => {
             )
             .subscribe();
 
-        // Polling interaction fallback
-        const interval = setInterval(() => {
-            fetchOwnerData();
-        }, 15000);
-
         return () => {
             supabase.removeChannel(bookingsChannel);
-            clearInterval(interval);
         };
     }, [user]);
 
@@ -573,31 +567,38 @@ const OwnerPortal = () => {
         <div className="min-h-screen bg-gray-50 pb-10">
             {/* Owner Header */}
             <div className="bg-primary text-white py-8 px-4 shadow-lg">
-                <div className="presentation-container flex justify-between items-center">
+                <div className="presentation-container flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
-                        <h1 className="text-2xl font-extrabold mb-1 tracking-tight">Owner Portal</h1>
+                        <h1 className="text-xl md:text-2xl font-extrabold mb-1 tracking-tight">Owner Portal</h1>
                         <p className="text-xs opacity-90 font-light mb-3">Manage your properties and bookings</p>
-                        <Link 
-                            to="/owner/profile" 
-                            className="bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10 transition-all flex items-center gap-2 w-fit group"
-                        >
-                            <User size={14} className="group-hover:text-secondary transition-colors" />
-                            <span className="text-xs font-bold">My Owner Profile</span>
-                        </Link>
+                        <div className="flex gap-2">
+                            <Link 
+                                to="/owner/profile" 
+                                className="bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10 transition-all flex items-center gap-2 w-fit group"
+                            >
+                                <User size={14} className="group-hover:text-secondary transition-colors" />
+                                <span className="text-xs font-bold">My Owner Profile</span>
+                            </Link>
+                            <Link 
+                                to="/owner/analysis" 
+                                className="bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10 transition-all flex items-center gap-2 w-fit group"
+                            >
+                                <BarChart3 size={14} className="group-hover:text-secondary transition-colors" />
+                                <span className="text-xs font-bold">Analytics Dashboard</span>
+                            </Link>
+                        </div>
                     </div>
-                    <div className="flex space-x-6 text-center bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/10">
+                    <div className="grid grid-cols-3 gap-4 text-center bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/10 w-full md:w-auto">
                         <div>
                             <p className="text-xl font-extrabold">{locations.length}</p>
                             <p className="opacity-80 text-[10px] uppercase tracking-wider font-bold mt-0.5">Properties</p>
                         </div>
-                        <div className="w-px bg-white/20 mx-2"></div>
                         <div>
                             <p className="text-xl font-extrabold">{bookings.length}</p>
                             <p className="opacity-80 text-[10px] uppercase tracking-wider font-bold mt-0.5">Bookings</p>
                         </div>
-                        <div className="w-px bg-white/20 mx-2"></div>
                         <div>
-                            <p className="text-xl font-extrabold text-secondary">₹{totalRevenue}</p>
+                            <p className="text-xl font-extrabold text-secondary">Rs.{totalRevenue}</p>
                             <p className="opacity-80 text-[10px] uppercase tracking-wider font-bold mt-0.5">Earnings</p>
                         </div>
                     </div>
@@ -770,9 +771,9 @@ const OwnerPortal = () => {
                                                                     onChange={(e) => handleStatusChange(booking.id, e.target.value, booking.location_id)}
                                                                     disabled={booking.status === 'Cancelled'}
                                                                     style={{
-                                                                        background: '#0f172a',
-                                                                        color: '#f8fafc',
-                                                                        border: '1px solid #334155',
+                                                                        background: '#ffffff',
+                                                                        color: '#1e293b',
+                                                                        border: '1px solid #e2e8f0',
                                                                         borderRadius: '8px',
                                                                         padding: '6px 32px 6px 12px',
                                                                         fontSize: '13px',
@@ -781,17 +782,18 @@ const OwnerPortal = () => {
                                                                         letterSpacing: '0.03em',
                                                                         cursor: 'pointer',
                                                                         appearance: 'none',
-                                                                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                                                                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
                                                                         backgroundRepeat: 'no-repeat',
                                                                         backgroundPosition: 'right 10px center',
                                                                         outline: 'none',
                                                                         minWidth: '140px',
+                                                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
                                                                     }}
                                                                 >
-                                                                    <option value="Scheduled" style={{ background: '#0f172a', color: '#94a3b8' }}>Scheduled</option>
-                                                                    <option value="Started"   style={{ background: '#0f172a', color: '#38bdf8' }}>Started</option>
-                                                                    <option value="Cancelled" style={{ background: '#0f172a', color: '#f87171' }}>Cancelled</option>
-                                                                    <option value="Completed" style={{ background: '#0f172a', color: '#4ade80' }}>Completed</option>
+                                                                    <option value="Scheduled" style={{ color: '#64748b' }}>Scheduled</option>
+                                                                    <option value="Started"   style={{ color: '#0284c7' }}>Started</option>
+                                                                    <option value="Cancelled" style={{ color: '#dc2626' }}>Cancelled</option>
+                                                                    <option value="Completed" style={{ color: '#16a34a' }}>Completed</option>
                                                                 </select>
                                                                 {booking.status !== 'Cancelled' && booking.status !== 'Completed' && (
                                                                     <button
@@ -860,13 +862,17 @@ const OwnerPortal = () => {
 
                     {/* Add Location Modal */}
                     {isAddModalOpen && (
-                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-                            <div className="bg-white/90 backdrop-blur-2xl border border-white/20 rounded-[2.5rem] shadow-2xl max-w-2xl w-full p-12 relative animate-in fade-in zoom-in duration-300">
-                                <button onClick={() => setIsAddModalOpen(false)} className="absolute top-8 right-8 text-gray-400 hover:text-gray-900 transition-colors">
-                                    <X size={36} />
-                                </button>
-                                <h2 className="text-4xl font-extrabold mb-10 text-gray-900">Add New Property</h2>
-                                <form onSubmit={handleAddLocation} className="space-y-8">
+                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-2 sm:p-4 backdrop-blur-sm">
+                            <div className="bg-white border border-gray-200 rounded-2xl sm:rounded-[2rem] shadow-2xl max-w-2xl w-full flex flex-col relative max-h-[90vh] overflow-hidden">
+                                {/* Sticky Header */}
+                                <div className="flex items-center justify-between p-5 sm:p-8 border-b border-gray-100 bg-white z-10 sticky top-0">
+                                    <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900">Add New Property</h2>
+                                    <button onClick={() => setIsAddModalOpen(false)} aria-label="Close" className="text-gray-400 hover:text-gray-900 hover:bg-gray-100 p-2 rounded-full transition-colors">
+                                        <X size={24} />
+                                    </button>
+                                </div>
+                                {/* Scrollable Form Content */}
+                                <form onSubmit={handleAddLocation} className="space-y-5 p-5 sm:p-8 overflow-y-auto flex-1">
                                     {/* Image Upload Section - Moved to Top */}
                                     <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 mb-6">
                                         <label className="block text-gray-700 font-bold mb-3 flex items-center gap-2">
@@ -926,17 +932,17 @@ const OwnerPortal = () => {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-8">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-gray-700 font-bold mb-2">Property Name</label>
+                                            <label className="block text-gray-700 font-bold mb-2 text-sm">Property Name</label>
                                             <input type="text" required
-                                                className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                                                className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
                                                 value={newLoc.name} onChange={e => setNewLoc({ ...newLoc, name: e.target.value })} placeholder="e.g. Downtown Garage" />
                                         </div>
                                         <div>
-                                            <label className="block text-gray-700 font-bold mb-2">Type</label>
+                                            <label className="block text-gray-700 font-bold mb-2 text-sm">Type</label>
                                             <select
-                                                className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                                                className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
                                                 value={newLoc.type} onChange={e => setNewLoc({ ...newLoc, type: e.target.value })}>
                                                 <option value="parking">Parking</option>
                                                 <option value="ev">EV Charging</option>
@@ -944,9 +950,9 @@ const OwnerPortal = () => {
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-gray-700 font-bold mb-2">Address</label>
+                                        <label className="block text-gray-700 font-bold mb-2 text-sm">Address</label>
                                         <input type="text" required
-                                            className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                                            className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
                                             value={newLoc.address} 
                                             onChange={e => setNewLoc({ ...newLoc, address: e.target.value })} 
                                             onBlur={handleAddressBlur} 
@@ -1028,18 +1034,18 @@ const OwnerPortal = () => {
                                             </div>
                                         </>
                                     ) : (
-                                        <div className="space-y-6">
-                                            <div className="grid grid-cols-2 gap-6">
+                                        <div className="space-y-5">
+                                            <div className="grid grid-cols-2 gap-4">
                                                 <div>
-                                                    <label className="block text-gray-700 font-bold mb-2">Price/Hr (₹)</label>
+                                                    <label className="block text-gray-700 font-bold mb-2 text-sm">Price/Hr (Rs.)</label>
                                                     <input type="number" required
-                                                        className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                                                        className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
                                                         value={newLoc.price} onChange={e => setNewLoc({ ...newLoc, price: e.target.value })} placeholder="0.00" />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-gray-700 font-bold mb-2">Total Slots</label>
+                                                    <label className="block text-gray-700 font-bold mb-2 text-sm">Total Slots</label>
                                                     <input type="number" required
-                                                        className="w-full p-4 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                                                        className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
                                                         value={newLoc.slots} onChange={e => setNewLoc({ ...newLoc, slots: e.target.value })} placeholder="10" />
                                                 </div>
                                             </div>
@@ -1093,7 +1099,7 @@ const OwnerPortal = () => {
 
                     {/* Edit Location Modal */}
                     {isEditModalOpen && editingLoc && (
-                        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+                        <div className="fixed inset-0 flex items-center justify-center z-[9999] p-4" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
                             <div style={{ maxWidth: 600, width: '100%', maxHeight: '90vh', borderRadius: 16, background: 'rgba(255,255,255,0.95)', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }} className="shadow-2xl">
                                 <form onSubmit={handleEditLocation} className="flex flex-col" style={{ minHeight: 0 }}>
 

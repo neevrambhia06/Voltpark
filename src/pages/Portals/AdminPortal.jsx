@@ -42,107 +42,87 @@ const AdminPortal = () => {
     const fetchAdminData = async (isInitialLocad = false) => {
         if (isInitialLocad) setLoading(true);
         try {
-            console.log("Fetching admin stats...");
-            // Stats checks
-            const { count: ownerCount, error: err1 } = await supabase.from('owner_profiles').select('*', { count: 'exact', head: true });
-            const { count: locationCount, error: err2 } = await supabase.from('locations').select('*', { count: 'exact', head: true });
-            const { count: bookingCount, error: err3 } = await supabase.from('bookings').select('*', { count: 'exact', head: true });
+            // Wave 1: All independent queries in parallel
+            const [countRes, pendingRes, recentBksRes, recentLocsRes, slotStatsRes, ownersRes] = await Promise.all([
+                // Counts (head-only, no data transfer)
+                Promise.all([
+                    supabase.from('owner_profiles').select('id', { count: 'exact', head: true }),
+                    supabase.from('locations').select('id', { count: 'exact', head: true }),
+                    supabase.from('bookings').select('id', { count: 'exact', head: true }),
+                ]),
+                // Pending approvals
+                supabase.from('owner_profiles').select('*').eq('approval_status', 'pending'),
+                // Recent bookings (limit 10)
+                supabase.from('bookings').select('*, locations(name), users(name, email)').order('created_at', { ascending: false }).limit(10),
+                // Recent locations (limit 10)
+                supabase.from('locations').select('id, name, city, type, available_slots, total_slots, created_at').order('created_at', { ascending: false }).limit(10),
+                // Slot stats (only needed columns)
+                supabase.from('locations').select('car_total_slots, bike_total_slots, type'),
+                // Owners list
+                supabase.from('owner_profiles').select('id, name, email, created_at, role, approval_status').neq('approval_status', 'pending').order('created_at', { ascending: false }),
+            ]);
 
-            if (err1) throw err1;
-            if (err2) throw err2;
-            if (err3) throw err3;
+            const [ownerCountRes, locationCountRes, bookingCountRes] = countRes;
+            if (ownerCountRes.error) throw ownerCountRes.error;
+            if (locationCountRes.error) throw locationCountRes.error;
+            if (bookingCountRes.error) throw bookingCountRes.error;
+            if (pendingRes.error) throw pendingRes.error;
+            if (recentBksRes.error) throw recentBksRes.error;
+            if (recentLocsRes.error) throw recentLocsRes.error;
+            if (slotStatsRes.error) throw slotStatsRes.error;
+            if (ownersRes.error) throw ownersRes.error;
 
-            // Fetch Pending Approvals
-            const { data: pendings, error: err4 } = await supabase
-                .from('owner_profiles')
-                .select('*')
-                .eq('approval_status', 'pending');
-            if (err4) throw err4;
+            const allLocs = slotStatsRes.data || [];
+            const totalCarSlots = allLocs.reduce((sum, l) => sum + (l.car_total_slots || 0), 0);
+            const totalBikeSlots = allLocs.reduce((sum, l) => sum + (l.bike_total_slots || 0), 0);
 
-            // Fetch recent bookings (Limit 10)
-            const { data: recentBks, error: recentError } = await supabase
-                .from('bookings')
-                .select('*, locations(name), users(name, email)')
-                .order('created_at', { ascending: false })
-                .limit(10);
-            if (recentError) throw recentError;
+            const ownersData = ownersRes.data || [];
 
-            // Fetch recent locations (Limit 10)
-            const { data: recentLocs, error: err5 } = await supabase
-                .from('locations')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .limit(10);
-            if (err5) throw err5;
+            // Wave 2: Owner enrichment (depends on ownersData)
+            const ownerIds = ownersData.map(o => o.id);
+            let enrichedOwners = ownersData.map(o => ({ ...o, propertiesCount: 0, bookingsCount: 0 }));
 
-            // Fetch ALL locations for Slot Stats
-            const { data: allLocs, error: err6 } = await supabase
-                .from('locations')
-                .select('car_total_slots, bike_total_slots, type');
-            if (err6) throw err6;
+            if (ownerIds.length > 0) {
+                const { data: allOwnerLocations } = await supabase
+                    .from('locations')
+                    .select('id, owner_id')
+                    .in('owner_id', ownerIds);
 
-            const totalCarSlots = (allLocs || []).reduce((sum, l) => sum + (l.car_total_slots || 0), 0);
-            const totalBikeSlots = (allLocs || []).reduce((sum, l) => sum + (l.bike_total_slots || 0), 0);
+                const ownerLocationIdsMap = {};
+                (allOwnerLocations || []).forEach(loc => {
+                    if (!ownerLocationIdsMap[loc.owner_id]) ownerLocationIdsMap[loc.owner_id] = [];
+                    ownerLocationIdsMap[loc.owner_id].push(loc.id);
+                });
 
-            // Fetch Owners (Approved users)
-            const { data: ownersData, error: err7 } = await supabase
-                .from('owner_profiles')
-                .select(`id, name, email, created_at, role, approval_status`)
-                .neq('approval_status', 'pending') // Only show processed or approved owners in main list
-                .order('created_at', { ascending: false });
-            if (err7) throw err7;
+                const allLocIds = (allOwnerLocations || []).map(l => l.id);
+                let allRelevantBookings = [];
+                if (allLocIds.length > 0) {
+                    const { data: bks } = await supabase
+                        .from('bookings')
+                        .select('id, location_id')
+                        .in('location_id', allLocIds);
+                    allRelevantBookings = bks || [];
+                }
 
-            // 3. Bulk Fetch Optimizations (Avoid N+1)
-            const ownerIds = (ownersData || []).map(o => o.id);
-            
-            // Bulk fetch all locations for these owners
-            const { data: allOwnerLocations } = await supabase
-                .from('locations')
-                .select('id, owner_id')
-                .in('owner_id', ownerIds);
-
-            const ownerLocationIdsMap = {};
-            (allOwnerLocations || []).forEach(loc => {
-                if (!ownerLocationIdsMap[loc.owner_id]) ownerLocationIdsMap[loc.owner_id] = [];
-                ownerLocationIdsMap[loc.owner_id].push(loc.id);
-            });
-
-            // Bulk fetch bookings for all these locations
-            const allLocIds = (allOwnerLocations || []).map(l => l.id);
-            let allRelevantBookings = [];
-            if (allLocIds.length > 0) {
-                // We use head: false to actually get the data IDs for mapping
-                const { data: bks } = await supabase
-                    .from('bookings')
-                    .select('id, location_id')
-                    .in('location_id', allLocIds);
-                allRelevantBookings = bks || [];
+                enrichedOwners = ownersData.map(owner => {
+                    const myLocs = ownerLocationIdsMap[owner.id] || [];
+                    const myBookingsCount = allRelevantBookings.filter(b => myLocs.includes(b.location_id)).length;
+                    return { ...owner, propertiesCount: myLocs.length, bookingsCount: myBookingsCount };
+                });
             }
 
-            const enrichedOwners = (ownersData || []).map(owner => {
-                const myLocs = ownerLocationIdsMap[owner.id] || [];
-                // Count bookings targeting locations owned by this owner
-                const myBookingsCount = allRelevantBookings.filter(b => myLocs.includes(b.location_id)).length;
-                return {
-                    ...owner,
-                    propertiesCount: myLocs.length,
-                    bookingsCount: myBookingsCount
-                };
-            });
-
             setStats({
-                totalOwners: ownerCount || 0,
-                totalLocations: locationCount || 0,
-                totalBookings: bookingCount || 0,
+                totalOwners: ownerCountRes.count || 0,
+                totalLocations: locationCountRes.count || 0,
+                totalBookings: bookingCountRes.count || 0,
                 carSlots: totalCarSlots,
                 bikeSlots: totalBikeSlots
             });
             setOwners(enrichedOwners);
-            setPendingRequests(pendings || []);
-            setRecentBookings(recentBks || []);
-            setLocations(recentLocs || []);
+            setPendingRequests(pendingRes.data || []);
+            setRecentBookings(recentBksRes.data || []);
+            setLocations(recentLocsRes.data || []);
             setErrorMsg(null);
-            console.log("Admin data fetched successfully");
         } catch (e) {
             console.error("fetchAdminData Error:", e);
             setErrorMsg(e.message || "Failed to fetch data");
@@ -177,12 +157,10 @@ const AdminPortal = () => {
             })
             .subscribe();
 
-        // Fallback polling
-        const interval = setInterval(() => fetchAdminData(false), 15000);
+        // Polling removed - realtime subscriptions handle updates
 
         return () => {
             supabase.removeChannel(channel);
-            clearInterval(interval);
         };
     }, []);
 
@@ -530,13 +508,13 @@ const AdminPortal = () => {
             {/* Admin Header */}
             <div className="bg-slate-900 text-white py-8 px-4">
                 <div className="max-w-7xl mx-auto">
-                    <div className="flex justify-between items-center mb-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                         <div>
-                            <h1 className="text-2xl font-extrabold mb-1 text-white">Admin Portal</h1>
+                            <h1 className="text-xl md:text-2xl font-extrabold mb-1 text-white">Admin Portal</h1>
                             <p className="text-xs text-gray-400">Owner Management Hub</p>
                         </div>
                         {/* Quick Actions Button Group */}
-                        <div className="flex gap-3">
+                        <div className="flex flex-wrap gap-2">
                             <button
                                 onClick={() => setIsAddPropertyModalOpen(true)}
                                 className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors shadow-lg flex items-center"
@@ -862,13 +840,15 @@ const AdminPortal = () => {
 
             {/* Add Property Modal */}
             {isAddPropertyModalOpen && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-                    <div className="bg-white/95 backdrop-blur-2xl border border-white/20 rounded-xl shadow-2xl max-w-2xl w-full p-8 relative animate-in fade-in zoom-in duration-300">
-                        <button onClick={() => setIsAddPropertyModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-900 transition-colors">
-                            <X size={24} />
-                        </button>
-                        <h2 className="text-2xl font-extrabold mb-6 text-gray-900">Add New Property to Owner</h2>
-                        <form onSubmit={handleAddProperty} className="space-y-4">
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-2 sm:p-4 backdrop-blur-sm">
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-2xl max-w-2xl w-full flex flex-col relative max-h-[90vh] overflow-hidden animate-in fade-in zoom-in duration-300">
+                        <div className="flex items-center justify-between p-5 sm:p-8 border-b border-gray-100 bg-white z-10 sticky top-0">
+                            <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900">Add New Property to Owner</h2>
+                            <button onClick={() => setIsAddPropertyModalOpen(false)} className="text-gray-400 hover:text-gray-900 hover:bg-gray-100 p-2 rounded-full transition-colors">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleAddProperty} className="space-y-5 p-5 sm:p-8 overflow-y-auto flex-1">
                             <div>
                                 <label className="block text-gray-700 font-bold mb-1 text-sm">Assign to Owner</label>
                                 <select
@@ -963,14 +943,18 @@ const AdminPortal = () => {
 
             {/* Add Owner Modal */}
             {isAddOwnerModalOpen && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-                    <div className="bg-white/95 backdrop-blur-2xl border border-white/20 rounded-xl shadow-2xl max-w-lg w-full p-8 relative animate-in fade-in zoom-in duration-300">
-                        <button onClick={() => setIsAddOwnerModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-900 transition-colors">
-                            <X size={24} />
-                        </button>
-                        <h2 className="text-2xl font-extrabold mb-2 text-gray-900">Promote User to Owner</h2>
-                        <p className="text-sm text-gray-500 mb-6">Enter the email of an existing user to promote them to an Owner account.</p>
-                        <form onSubmit={handlePromoteUser} className="space-y-4">
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-2 sm:p-4 backdrop-blur-sm">
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-2xl max-w-lg w-full flex flex-col relative max-h-[90vh] overflow-hidden animate-in fade-in zoom-in duration-300">
+                        <div className="flex items-start justify-between p-5 sm:p-8 border-b border-gray-100 bg-white z-10 sticky top-0">
+                            <div>
+                                <h2 className="text-xl sm:text-2xl font-extrabold mb-1 text-gray-900">Promote User to Owner</h2>
+                                <p className="text-sm text-gray-500">Enter the email of an existing user to promote them to an Owner account.</p>
+                            </div>
+                            <button onClick={() => setIsAddOwnerModalOpen(false)} className="text-gray-400 hover:text-gray-900 hover:bg-gray-100 p-2 rounded-full transition-colors ml-4 shrink-0">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <form onSubmit={handlePromoteUser} className="space-y-5 p-5 sm:p-8 overflow-y-auto flex-1">
                             <div>
                                 <label className="block text-gray-700 font-bold mb-1 text-sm">User Email</label>
                                 <input

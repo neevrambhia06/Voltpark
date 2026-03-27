@@ -111,7 +111,7 @@ const Navbar = () => {
 
             {/* Mobile Menu */}
             {isOpen && (
-                <div className="md:hidden bg-white border-t absolute top-16 left-0 right-0 shadow-lg">
+                <div className="md:hidden bg-white border-t absolute top-14 left-0 right-0 shadow-lg z-50">
                     <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
                         {navLinks.map((link) => (
                             <Link
@@ -125,6 +125,13 @@ const Navbar = () => {
                         ))}
                         {user ? (
                             <>
+                                <Link
+                                    to={userRole === 'owner' ? '/owner/profile' : '/profile'}
+                                    onClick={() => setIsOpen(false)}
+                                    className="block px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                >
+                                    <User size={16} /> My Profile
+                                </Link>
                                 <Link to={getDashboardLink()} onClick={() => setIsOpen(false)} className="block px-3 py-2 text-sm font-medium text-primary hover:bg-gray-50">
                                     Dashboard
                                 </Link>

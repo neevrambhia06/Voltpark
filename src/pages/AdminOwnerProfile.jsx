@@ -26,15 +26,19 @@ export default function AdminOwnerProfile() {
     setLoading(true)
     setError(null)
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', ownerId)
-        .single()
+      const [ownerProfReq, profReq] = await Promise.all([
+        supabase.from('owner_profiles').select('*').eq('id', ownerId).single(),
+        supabase.from('profiles').select('*').eq('id', ownerId).maybeSingle()
+      ])
 
-      if (error) throw error
+      if (ownerProfReq.error) throw ownerProfReq.error
 
-      setProfile(data)
+      const mergedProfile = {
+        ...profReq.data,
+        ...ownerProfReq.data,
+      }
+
+      setProfile(mergedProfile)
       await fetchStats(ownerId)
 
     } catch (err) {
@@ -129,7 +133,13 @@ export default function AdminOwnerProfile() {
               Detailed overview of owner profile and business activities
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+             <button 
+               onClick={() => navigate(`/admin/owner/${ownerId}/analysis`)}
+               style={{ padding: '6px 16px', borderRadius: '8px', background: '#00C9C8', color: '#fff', border: 'none', fontSize: '12px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+             >
+               <LayoutGrid size={14} /> Analysis Dashboard
+             </button>
              <span style={{ padding: '6px 16px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
                ID: {ownerId.slice(0, 8)}...
              </span>
@@ -148,21 +158,21 @@ export default function AdminOwnerProfile() {
               {profile.avatar_url ? (
                 <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
-                (profile.full_name?.[0] || 'O').toUpperCase()
+                (profile.name?.[0] || 'O').toUpperCase()
               )}
             </div>
             
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', margin: 0 }}>{profile.full_name || 'Owner Profile'}</h2>
-                {profile.is_verified && <ShieldCheck size={18} className="text-green-500" />}
+                <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', margin: 0 }}>{profile.name || 'Owner Profile'}</h2>
+                {profile.approval_status === 'approved' && <ShieldCheck size={18} className="text-green-500" />}
               </div>
               <p style={{ fontSize: '14px', color: '#64748b', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Mail size={14} /> {profile.email}
               </p>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <span style={{ padding: '4px 12px', borderRadius: '6px', background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>Verified Owner</span>
-                <span style={{ padding: '4px 12px', borderRadius: '6px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>Partner since {(new Date(profile.joined_at)).getFullYear() || 'N/A'}</span>
+                <span style={{ padding: '4px 12px', borderRadius: '6px', background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>{profile.approval_status === 'approved' ? 'Verified Owner' : 'Pending Verification'}</span>
+                <span style={{ padding: '4px 12px', borderRadius: '6px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>Partner since {(new Date(profile.created_at)).getFullYear() || 'N/A'}</span>
               </div>
             </div>
           </div>
@@ -172,11 +182,13 @@ export default function AdminOwnerProfile() {
             
             {/* Business Info */}
             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '20px', padding: '24px' }}>
-              <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#94a3b8', margin: '0 0 20px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Business Registration</h3>
+              <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#94a3b8', margin: '0 0 20px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Business Details</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <DetailItem label="Entity Name" value={profile.business_name} icon={<Building2 size={16} />} />
+                <DetailItem label="Entity Name" value={profile.company_name} icon={<Building2 size={16} />} />
                 <DetailItem label="Service Type" value={profile.business_type} />
                 <DetailItem label="GST Number" value={profile.gst_number} />
+                <DetailItem label="Role" value={profile.role || 'Owner'} />
+                <DetailItem label="Approval Status" value={profile.approval_status} />
               </div>
             </div>
 
@@ -184,9 +196,10 @@ export default function AdminOwnerProfile() {
             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '20px', padding: '24px' }}>
               <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#94a3b8', margin: '0 0 20px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Contact & Location</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <DetailItem label="Primary Email" value={profile.email} icon={<Mail size={16} />} />
                 <DetailItem label="Mobile" value={profile.mobile} icon={<Phone size={16} />} />
                 <DetailItem label="Base City" value={profile.city} icon={<MapPin size={16} />} />
-                <DetailItem label="State/Region" value={profile.state} />
+                <DetailItem label="Join Date" value={new Date(profile.created_at).toLocaleDateString()} />
               </div>
             </div>
 

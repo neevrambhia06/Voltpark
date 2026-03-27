@@ -83,13 +83,7 @@ const Locations = ({ type }) => {
         };
     }, [type]);
 
-    // Fallback polling every 30 seconds (reduced from 15s)
-    useEffect(() => {
-        const interval = setInterval(() => {
-            fetchLocations();
-        }, 30000);
-        return () => clearInterval(interval);
-    }, [type]);
+    // Polling removed - realtime subscription handles live updates
 
     const fetchLocations = async () => {
         try {

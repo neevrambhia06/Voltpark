@@ -92,7 +92,7 @@ const OwnerDashboard = () => {
         }
     };
 
-    // Real-time Subscription for Dashboard
+    // Real-time Subscription for Dashboard (no polling needed)
     useEffect(() => {
         if (!user) return;
 
@@ -102,12 +102,8 @@ const OwnerDashboard = () => {
             .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => fetchOwnerData())
             .subscribe();
 
-        // Fallback polling
-        const interval = setInterval(fetchOwnerData, 15000);
-
         return () => {
             supabase.removeChannel(channel);
-            clearInterval(interval);
         };
     }, [user]);
 
@@ -166,14 +162,14 @@ const OwnerDashboard = () => {
         <div className="min-h-screen bg-gray-50 pb-10">
             {/* Header */}
             <header className="bg-white shadow">
-                <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900">Owner Dashboard</h1>
+                        <h1 className="text-xl md:text-3xl font-bold text-gray-900">Owner Dashboard</h1>
                         <p className="mt-1 text-sm text-gray-500">Welcome back, Partner</p>
                     </div>
                     {/* Add Location Button (Placeholder for now) */}
-                    <button className="bg-secondary text-white px-4 py-2 rounded-lg flex items-center hover:bg-teal-700 transition">
-                        <Plus size={20} className="mr-2" />
+                    <button className="bg-secondary text-white px-4 py-2 rounded-lg flex items-center hover:bg-teal-700 transition text-sm">
+                        <Plus size={18} className="mr-2" />
                         Add New Location
                     </button>
                 </div>
@@ -182,7 +178,7 @@ const OwnerDashboard = () => {
             <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
 
                 {/* Stats Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 px-4 sm:px-0">
                     <div className="bg-white overflow-hidden shadow rounded-lg p-5">
                         <div className="flex items-center">
                             <div className="flex-shrink-0 bg-blue-100 rounded-md p-3">
@@ -241,8 +237,8 @@ const OwnerDashboard = () => {
                 </div>
 
                 {/* Tabs */}
-                <div className="border-b border-gray-200 mb-6">
-                    <nav className="-mb-px flex space-x-8">
+                <div className="border-b border-gray-200 mb-6 px-4 sm:px-0">
+                    <nav className="-mb-px flex space-x-4 sm:space-x-8 overflow-x-auto">
                         {['Overview', 'My Locations', 'Bookings'].map((tab) => (
                             <button
                                 key={tab}
